@@ -20,45 +20,11 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from soc_threat import LABELS  # noqa: E402
+from soc_threat.feature_schema import (  # noqa: E402
+    CATEGORICAL_FEATURES,
+    NUMERIC_FEATURES,
+)
 from soc_threat.metrics import evaluate_predictions  # noqa: E402
-
-
-CATEGORICAL_FEATURES = [
-    "pipeline",
-    "product_name",
-    "product_group",
-    "src_ip_kind",
-    "port_bucket",
-    "message_length_bucket",
-    "structure_combo",
-    "network_missing_pattern",
-]
-
-NUMERIC_FEATURES = [
-    "src_port_number",
-    "src_ip_missing",
-    "dst_ip_missing",
-    "src_port_missing",
-    "src_host_missing",
-    "dst_host_missing",
-    "username_missing",
-    "product_missing",
-    "message_missing",
-    "network_present_count",
-    "message_length",
-    "src_ip_length",
-    "dst_ip_length",
-    "src_host_length",
-    "dst_host_length",
-    "username_length",
-    "message_has_deny",
-    "message_has_allow",
-    "message_has_accepted",
-    "message_has_failed",
-    "message_has_blocked",
-    "message_starts_angle",
-    "message_contains_json",
-]
 
 
 def seed_everything(seed: int) -> None:

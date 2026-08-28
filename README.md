@@ -65,3 +65,15 @@ python src/analyze_sft_csv.py /实际路径/train_system_prompt_response.csv \
 ```
 
 该脚本会正确处理prompt中的引号和换行，并统计响应标签、异常行和prompt长度。
+
+## 只有system/prompt/response训练CSV时
+
+直接运行SFT版V1脚本，参数是5GB CSV的绝对路径：
+
+```bash
+bash scripts/run_sft_cloud_v1.sh \
+  "/root/work/基于SOC日志网络安全威胁检测算法设计与实现/train_system_prompt_response.csv"
+```
+
+脚本会流式解析prompt、恢复结构字段，并使用prompt哈希划分90%训练和10%内部验证。
+相同prompt始终进入同一部分，避免重复日志同时出现在训练集和验证集中。
