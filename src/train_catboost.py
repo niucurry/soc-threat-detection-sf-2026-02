@@ -180,7 +180,10 @@ def main() -> None:
             "importance": model.get_feature_importance(train_pool),
         }
     ).sort_values("importance", ascending=False)
-    importance.to_csv(args.output_dir / "feature_importance.csv", index=False)
+    importance.to_parquet(
+        args.output_dir / "feature_importance.parquet",
+        index=False,
+    )
 
     prediction_table = pa.table(
         {

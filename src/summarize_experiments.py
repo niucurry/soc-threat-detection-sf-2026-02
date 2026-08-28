@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import argparse
-import csv
 import json
 from pathlib import Path
 from typing import Any
@@ -55,19 +54,15 @@ def main() -> None:
         ),
         reverse=True,
     )
-    output = args.output or args.root / "comparison.csv"
+    output = args.output or args.root / "comparison.json"
+    if output.suffix.lower() != ".json":
+        raise ValueError("Experiment summary output must use the .json suffix")
     output.parent.mkdir(parents=True, exist_ok=True)
-    with output.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(handle, fieldnames=list(rows[0]))
-        writer.writeheader()
-        writer.writerows(rows)
-    json_output = output.with_suffix(".json")
-    json_output.write_text(
+    output.write_text(
         json.dumps(rows, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(rows, ensure_ascii=False, indent=2), flush=True)
-    print(f"CSV summary: {output}", flush=True)
-    print(f"JSON summary: {json_output}", flush=True)
+    print(f"JSON summary: {output}", flush=True)
 
 
 if __name__ == "__main__":

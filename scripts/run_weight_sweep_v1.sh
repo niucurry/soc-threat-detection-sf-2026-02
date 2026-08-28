@@ -40,4 +40,4 @@ done
 
 python src/summarize_experiments.py \
   --root "${OUTPUT_ROOT}" \
-  --output "${OUTPUT_ROOT}/comparison.csv"
+  --output "${OUTPUT_ROOT}/comparison.json"

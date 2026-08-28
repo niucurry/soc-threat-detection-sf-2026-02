@@ -20,7 +20,7 @@ V2 针对官方验证集暴露出的分布漂移增加了一个分层检测器�
    TF-IDF + SGD 二分类器重新判断正常/恶意；
 3. 对 `REJECT OK`、Windows 4625、明确的防火墙阻断等高置信安全语义
    使用规则兜底；
-4. 提供保守版和使用少量可疑事件规则的调优版，并严格校验提交文件的
+4. 提供保守版和使用少量可疑事件规则的调优版，并严格校验验证预测的
    `event_id` 完整性。
 
 训练集恶意占比约 5.43%，官方验证集约 0.70%。V1 结构特征无法区分
@@ -52,9 +52,8 @@ Final Score 选择，不再只优化 Macro-F1。
 | V2 保守版 | 0.999890 | 0.999958 | 10 | 不使用新增可疑事件覆盖规则 |
 | V2 调优版 | 1.000000 | 1.000000 | 0 | 增加 DLP 和 Duo 高精度可疑规则 |
 
-这些是已提供验证标签上的结果，不代表隐藏测试集一定满分。调优版更贴合当前
-验证分布，保守版对新数据源的假设更少，正式提交时建议两版都保留并结合榜单
-反馈选择。
+这些是已提供验证标签上的结果，不代表隐藏数据一定满分。调优版更贴合当前
+验证分布，保守版对新数据源的假设更少，后续仍需通过隔离验证比较泛化能力。
 
 ## V2 云端训练
 
@@ -86,24 +85,6 @@ artifacts/v2_hybrid/text/model.joblib
 artifacts/v2_hybrid/validation_conservative/metrics.json
 artifacts/v2_hybrid/validation_tuned/metrics.json
 ```
-
-## 测试集预测与 res.csv
-
-测试集发布后运行：
-
-```bash
-bash scripts/run_inference_v2.sh /测试集绝对路径/test.parquet artifacts/v2_submission/res.csv
-```
-
-默认生成调优版结果。如果要生成保守版：
-
-```bash
-V2_RULE_MODE=conservative bash scripts/run_inference_v2.sh \
-  /测试集绝对路径/test.parquet artifacts/v2_submission/res_conservative.csv
-```
-
-提交脚本会检查测试集和预测文件的行数、重复 ID、缺失 ID、多余 ID 和标签
-枚举值，最终 CSV 只包含 `event_id,pred_label` 两列。
 
 ## V1 结构基线
 
@@ -144,54 +125,11 @@ bash scripts/run_cloud_v1.sh /root/work
 bash scripts/run_weight_sweep_v1.sh
 ```
 
-汇总结果保存在 `artifacts/v1_weight_sweep/comparison.csv` 和
-`comparison.json`，用于选择能兼顾攻击召回与误报数量的正式参数。
+汇总结果保存在 `artifacts/v1_weight_sweep/comparison.json`，用于选择能兼顾
+攻击召回与误报数量的正式参数。
 
 训练日志会实时显示，并保存到
 `artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
 也会保存在同一目录。
 
 详细上传和故障处理步骤见 `UPLOAD_INSTRUCTIONS.md`。
-
-## 大型CSV/CVS文件打不开时
-
-不要使用Excel直接打开数百万行日志。先运行轻量检查命令，它只读取文件开头，
-不会把整个文件载入内存：
-
-```bash
-python src/inspect_data_file.py /实际路径/数据文件.cvs
-```
-
-将命令输出发回后，再根据真实格式决定是否重命名、解压、拆分或修改预处理代码。
-
-如果文件头是 `system,prompt,response`，它属于指令微调数据。训练文件按标签相关顺序排列，
-因此需要流式扫描完整文件才能得到可靠的标签分布：
-
-```bash
-python src/analyze_sft_csv.py /实际路径/train_system_prompt_response.csv \
-  --max-rows 0 \
-  --output artifacts/sft_csv_sample_analysis.json
-```
-
-该脚本会正确处理prompt中的引号和换行，并统计响应标签、异常行和prompt长度。
-
-## 只有system/prompt/response训练CSV时
-
-直接运行SFT版V1脚本，参数是5GB CSV的绝对路径：
-
-```bash
-bash scripts/run_sft_cloud_v1.sh \
-  "/root/work/基于SOC日志网络安全威胁检测算法设计与实现/train_system_prompt_response.csv"
-```
-
-脚本会流式解析prompt、恢复结构字段，并使用prompt哈希划分90%训练和10%内部验证。
-相同prompt始终进入同一部分，避免重复日志同时出现在训练集和验证集中。
-
-如已将私有官方验证仓库克隆到云平台，可在启动前设置：
-
-```bash
-export OFFICIAL_VALID_PATH=/私有验证仓库路径/data/v1_valid.parquet
-```
-
-训练结束后脚本会自动执行一次外部验证，并把结果写入
-`artifacts/v1_sft_npu_tabular/official_validation/official_metrics.json`。
