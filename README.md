@@ -77,3 +77,12 @@ bash scripts/run_sft_cloud_v1.sh \
 
 脚本会流式解析prompt、恢复结构字段，并使用prompt哈希划分90%训练和10%内部验证。
 相同prompt始终进入同一部分，避免重复日志同时出现在训练集和验证集中。
+
+如已将私有官方验证仓库克隆到云平台，可在启动前设置：
+
+```bash
+export OFFICIAL_VALID_PATH=/私有验证仓库路径/data/v1_valid.parquet
+```
+
+训练结束后脚本会自动执行一次外部验证，并把结果写入
+`artifacts/v1_sft_npu_tabular/official_validation/official_metrics.json`。

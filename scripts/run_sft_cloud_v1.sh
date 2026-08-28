@@ -44,3 +44,17 @@ python -u src/train_npu_tabular.py \
   --output-dir artifacts/v1_sft_npu_tabular \
   2>&1 | tee artifacts/v1_sft_npu_tabular/train_console.log
 
+if [[ -n "${OFFICIAL_VALID_PATH:-}" ]]; then
+  if [[ ! -f "${OFFICIAL_VALID_PATH}" ]]; then
+    echo "OFFICIAL_VALID_PATH does not exist: ${OFFICIAL_VALID_PATH}"
+    exit 2
+  fi
+  python -u src/evaluate_tabular_checkpoint.py \
+    --model artifacts/v1_sft_npu_tabular/model.pt \
+    --data "${OFFICIAL_VALID_PATH}" \
+    --output-dir artifacts/v1_sft_npu_tabular/official_validation \
+    --device auto \
+    --batch-size 16384 \
+    --num-workers 4 \
+    2>&1 | tee artifacts/v1_sft_npu_tabular/official_validation_console.log
+fi
