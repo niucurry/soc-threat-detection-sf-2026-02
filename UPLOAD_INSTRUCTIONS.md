@@ -36,10 +36,34 @@ ls -lh data/raw
 
 ## 4. 启动训练
 
-在 `soc_cloud_v1` 目录执行：
+在项目目录后台执行：
 
 ```bash
-bash scripts/run_cloud_v2.sh
+mkdir -p artifacts/v2_hybrid
+nohup bash scripts/run_cloud_v2.sh /原始数据目录 \
+  > artifacts/v2_hybrid/nohup.log 2>&1 &
+echo $! > artifacts/v2_hybrid/train.pid
+cat artifacts/v2_hybrid/train.pid
+```
+
+查看总日志：
+
+```bash
+tail -f artifacts/v2_hybrid/nohup.log
+```
+
+按 `Ctrl+C` 只停止日志跟随，不会停止训练。查看后台进程和 NPU 状态：
+
+```bash
+PID=$(cat artifacts/v2_hybrid/train.pid)
+ps -fp "$PID"
+npu-smi info
+```
+
+基础模型开始后可查看逐轮训练指标：
+
+```bash
+tail -f artifacts/v2_hybrid/base/train_console.log
 ```
 
 脚本会依次：

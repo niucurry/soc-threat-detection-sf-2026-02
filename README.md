@@ -65,16 +65,44 @@ data/raw/valid_input.parquet
 data/raw/valid_answer_private.parquet
 ```
 
-在推荐 NPU 镜像中运行：
+在推荐 NPU 镜像中使用后台方式运行：
 
 ```bash
-bash scripts/run_cloud_v2.sh
+mkdir -p artifacts/v2_hybrid
+nohup bash scripts/run_cloud_v2.sh data/raw \
+  > artifacts/v2_hybrid/nohup.log 2>&1 &
+echo $! > artifacts/v2_hybrid/train.pid
+cat artifacts/v2_hybrid/train.pid
 ```
 
 如果数据位于其他目录：
 
 ```bash
-bash scripts/run_cloud_v2.sh /root/work
+mkdir -p artifacts/v2_hybrid
+nohup bash scripts/run_cloud_v2.sh /root/work \
+  > artifacts/v2_hybrid/nohup.log 2>&1 &
+echo $! > artifacts/v2_hybrid/train.pid
+cat artifacts/v2_hybrid/train.pid
+```
+
+查看总进度日志：
+
+```bash
+tail -f artifacts/v2_hybrid/nohup.log
+```
+
+按 `Ctrl+C` 只退出日志查看，不会终止后台训练。检查进程和 NPU：
+
+```bash
+PID=$(cat artifacts/v2_hybrid/train.pid)
+ps -fp "$PID"
+npu-smi info
+```
+
+基础模型开始训练后，还可以单独查看每轮指标：
+
+```bash
+tail -f artifacts/v2_hybrid/base/train_console.log
 ```
 
 主要结果位于：
