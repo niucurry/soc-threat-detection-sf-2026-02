@@ -105,6 +105,16 @@ def transform(
     frame: pd.DataFrame,
     preprocessor: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    categorical, numeric = transform_inputs(frame, preprocessor)
+    label_to_index = {label: index for index, label in enumerate(LABELS)}
+    labels = frame["label_binary"].map(label_to_index).to_numpy(dtype=np.int64, copy=True)
+    return categorical, numeric, labels
+
+
+def transform_inputs(
+    frame: pd.DataFrame,
+    preprocessor: dict[str, Any],
+) -> tuple[np.ndarray, np.ndarray]:
     categorical_columns: list[np.ndarray] = []
     for column in CATEGORICAL_FEATURES:
         mapping = preprocessor["category_maps"][column]
@@ -132,9 +142,7 @@ def transform(
     numeric = numeric_frame.to_numpy(dtype=np.float32, copy=True)
     numeric = np.clip((numeric - means) / stds, -12.0, 12.0).astype(np.float32)
 
-    label_to_index = {label: index for index, label in enumerate(LABELS)}
-    labels = frame["label_binary"].map(label_to_index).to_numpy(dtype=np.int64, copy=True)
-    return categorical, numeric, labels
+    return categorical, numeric
 
 
 def embedding_dimension(cardinality: int) -> int:
@@ -291,7 +299,8 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
 
-    best_macro_f1 = -1.0
+    selection_metric = "competition_score"
+    best_selection_score = -1.0
     best_epoch = -1
     best_state: dict[str, torch.Tensor] | None = None
     history: list[dict[str, float | int]] = []
@@ -345,6 +354,7 @@ def main() -> None:
             "epoch": epoch,
             "train_loss": loss_sum / max(1, row_count),
             "macro_f1": metrics["macro_f1"],
+            "competition_score": metrics["competition_score"],
             "accuracy": metrics["accuracy"],
             "benign_recall": metrics["per_class"]["benign"]["recall"],
             "malicious_recall": metrics["per_class"]["malicious"]["recall"],
@@ -354,8 +364,8 @@ def main() -> None:
         history.append(epoch_result)
         print(json.dumps(epoch_result, ensure_ascii=False), flush=True)
 
-        if metrics["macro_f1"] > best_macro_f1 + 1e-6:
-            best_macro_f1 = metrics["macro_f1"]
+        if metrics[selection_metric] > best_selection_score + 1e-8:
+            best_selection_score = metrics[selection_metric]
             best_epoch = epoch
             best_state = {
                 name: value.detach().cpu().clone()
@@ -387,6 +397,8 @@ def main() -> None:
             "model": "v1_pytorch_npu_structured",
             "device": str(device),
             "best_epoch": best_epoch,
+            "selection_metric": selection_metric,
+            "best_selection_score": best_selection_score,
             "train_rows": int(len(train_frame)),
             "valid_rows": int(len(valid_frame)),
             "data_seconds": data_seconds,

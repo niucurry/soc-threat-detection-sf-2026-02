@@ -11,7 +11,101 @@
 它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
 自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
 
-## 当前版本
+## 当前版本：V2 混合模型
+
+V2 针对官方验证集暴露出的分布漂移增加了一个分层检测器：
+
+1. PyTorch 结构模型负责全部日志的三分类基础判断；
+2. 对 `pipeline=syslog` 且产品名为空的混合簇，使用日志正文
+   TF-IDF + SGD 二分类器重新判断正常/恶意；
+3. 对 `REJECT OK`、Windows 4625、明确的防火墙阻断等高置信安全语义
+   使用规则兜底；
+4. 提供保守版和使用少量可疑事件规则的调优版，并严格校验提交文件的
+   `event_id` 完整性。
+
+训练集恶意占比约 5.43%，官方验证集约 0.70%。V1 结构特征无法区分
+产品名为空的正常和恶意日志，导致 9,793 条正常日志被误报为恶意；V2 的
+正文专用模型用于解决这个问题。
+
+正式评分按下式计算：
+
+```text
+Final Score = 0.40 × Threat-Binary-F1
+            + 0.25 × Threat-Binary-Recall
+            + 0.15 × Threat Recall
+            + 0.10 × Macro-F1
+            + 0.05 × Soft Label Score
+            + 0.05 × Balanced Accuracy
+```
+
+其中 Threat-Binary 将 `suspicious` 和 `malicious` 合并为威胁类；Threat
+Recall 是两种威胁召回率的平均值。当前代码根据评分说明把 Soft Label Score
+实现为逐行平均：预测完全正确计 1，`suspicious` 与 `malicious` 相互错判计
+0.5，正常与威胁之间错判计 0。正文专模阈值和结构模型最佳轮次均优先按照
+Final Score 选择，不再只优化 Macro-F1。
+
+在提供的 2,014,052 条官方外部验证数据上，本地复现实验如下：
+
+| 版本 | 正式综合分 | Macro-F1 | 错误行数 | 说明 |
+|---|---:|---:|---:|---|
+| V1 无类别权重 | 0.957210 | 0.912286 | 9,857 | 原结构模型 |
+| V2 保守版 | 0.999890 | 0.999958 | 10 | 不使用新增可疑事件覆盖规则 |
+| V2 调优版 | 1.000000 | 1.000000 | 0 | 增加 DLP 和 Duo 高精度可疑规则 |
+
+这些是已提供验证标签上的结果，不代表隐藏测试集一定满分。调优版更贴合当前
+验证分布，保守版对新数据源的假设更少，正式提交时建议两版都保留并结合榜单
+反馈选择。
+
+## V2 云端训练
+
+三份数据仍按下列文件名放置：
+
+```text
+data/raw/train.parquet
+data/raw/valid_input.parquet
+data/raw/valid_answer_private.parquet
+```
+
+在推荐 NPU 镜像中运行：
+
+```bash
+bash scripts/run_cloud_v2.sh
+```
+
+如果数据位于其他目录：
+
+```bash
+bash scripts/run_cloud_v2.sh /root/work
+```
+
+主要结果位于：
+
+```text
+artifacts/v2_hybrid/base/model.pt
+artifacts/v2_hybrid/text/model.joblib
+artifacts/v2_hybrid/validation_conservative/metrics.json
+artifacts/v2_hybrid/validation_tuned/metrics.json
+```
+
+## 测试集预测与 res.csv
+
+测试集发布后运行：
+
+```bash
+bash scripts/run_inference_v2.sh /测试集绝对路径/test.parquet artifacts/v2_submission/res.csv
+```
+
+默认生成调优版结果。如果要生成保守版：
+
+```bash
+V2_RULE_MODE=conservative bash scripts/run_inference_v2.sh \
+  /测试集绝对路径/test.parquet artifacts/v2_submission/res_conservative.csv
+```
+
+提交脚本会检查测试集和预测文件的行数、重复 ID、缺失 ID、多余 ID 和标签
+枚举值，最终 CSV 只包含 `event_id,pred_label` 两列。
+
+## V1 结构基线
 
 V1 云端主线是“类别嵌入 + 数值网络”的 PyTorch 结构化模型：
 
@@ -22,7 +116,7 @@ V1 云端主线是“类别嵌入 + 数值网络”的 PyTorch 结构化模型�
 
 当前上传包只包含PyTorch-NPU主线代码，避免在ARM镜像中安装不必要的CPU模型依赖。
 
-## 上传目录
+## V1 上传目录
 
 把三份原始文件放到：
 

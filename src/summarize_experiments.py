@@ -23,6 +23,7 @@ def load_row(path: Path, root: Path) -> dict[str, Any]:
         "run": str(path.parent.relative_to(root)),
         "class_weight_power": arguments.get("class_weight_power"),
         "best_epoch": metrics.get("best_epoch"),
+        "competition_score": metrics.get("competition_score"),
         "macro_f1": metrics["macro_f1"],
         "accuracy": metrics["accuracy"],
         "benign_precision": per_class["benign"]["precision"],
@@ -46,7 +47,14 @@ def main() -> None:
     if not metric_paths:
         raise FileNotFoundError(f"No metrics.json files found below {args.root}")
     rows = [load_row(path, args.root) for path in metric_paths]
-    rows.sort(key=lambda row: float(row["macro_f1"]), reverse=True)
+    rows.sort(
+        key=lambda row: float(
+            row["competition_score"]
+            if row["competition_score"] is not None
+            else row["macro_f1"]
+        ),
+        reverse=True,
+    )
     output = args.output or args.root / "comparison.csv"
     output.parent.mkdir(parents=True, exist_ok=True)
     with output.open("w", newline="", encoding="utf-8") as handle:
