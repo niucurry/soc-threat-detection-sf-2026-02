@@ -38,6 +38,12 @@ data/raw/valid_answer_private.parquet
 bash scripts/run_cloud_v1.sh
 ```
 
+如果三份原始文件已经直接放在云平台的 `/root/work`，不需要复制文件，运行：
+
+```bash
+bash scripts/run_cloud_v1.sh /root/work
+```
+
 训练日志会实时显示，并保存到
 `artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
 也会保存在同一目录。
