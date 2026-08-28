@@ -44,6 +44,15 @@ bash scripts/run_cloud_v1.sh
 bash scripts/run_cloud_v1.sh /root/work
 ```
 
+正式训练前可在相同的20万训练/验证样本上比较四种类别补偿强度：
+
+```bash
+bash scripts/run_weight_sweep_v1.sh
+```
+
+汇总结果保存在 `artifacts/v1_weight_sweep/comparison.csv` 和
+`comparison.json`，用于选择能兼顾攻击召回与误报数量的正式参数。
+
 训练日志会实时显示，并保存到
 `artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
 也会保存在同一目录。
