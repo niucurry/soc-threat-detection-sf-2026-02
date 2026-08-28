@@ -43,3 +43,14 @@ bash scripts/run_cloud_v1.sh
 也会保存在同一目录。
 
 详细上传和故障处理步骤见 `UPLOAD_INSTRUCTIONS.md`。
+
+## 大型CSV/CVS文件打不开时
+
+不要使用Excel直接打开数百万行日志。先运行轻量检查命令，它只读取文件开头，
+不会把整个文件载入内存：
+
+```bash
+python src/inspect_data_file.py /实际路径/数据文件.cvs
+```
+
+将命令输出发回后，再根据真实格式决定是否重命名、解压、拆分或修改预处理代码。
