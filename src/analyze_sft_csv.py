@@ -114,8 +114,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-rows",
         type=int,
-        default=100_000,
-        help="Rows to scan; use 0 to scan the full file",
+        default=0,
+        help="Rows to scan; default 0 scans the full file for an unbiased label distribution",
     )
     parser.add_argument(
         "--output",
