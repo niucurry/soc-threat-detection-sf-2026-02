@@ -54,3 +54,13 @@ python src/inspect_data_file.py /实际路径/数据文件.cvs
 ```
 
 将命令输出发回后，再根据真实格式决定是否重命名、解压、拆分或修改预处理代码。
+
+如果文件头是 `system,prompt,response`，它属于指令微调数据。可以流式扫描前10万条：
+
+```bash
+python src/analyze_sft_csv.py /实际路径/train_system_prompt_response.csv \
+  --max-rows 100000 \
+  --output artifacts/sft_csv_sample_analysis.json
+```
+
+该脚本会正确处理prompt中的引号和换行，并统计响应标签、异常行和prompt长度。

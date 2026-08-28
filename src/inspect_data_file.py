@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -12,6 +13,16 @@ MAGIC_TYPES = {
     b"PK\x03\x04": "zip",
     b"\x1f\x8b": "gzip",
 }
+
+
+def allow_large_csv_fields() -> None:
+    limit = sys.maxsize
+    while True:
+        try:
+            csv.field_size_limit(limit)
+            return
+        except OverflowError:
+            limit //= 10
 
 
 def detect_binary_type(prefix: bytes) -> str | None:
@@ -75,7 +86,20 @@ def inspect(path: Path) -> dict[str, Any]:
     except csv.Error:
         delimiter = max(",\t|;", key=lambda value: nonempty_lines[0].count(value))
 
-    rows = list(csv.reader(nonempty_lines, delimiter=delimiter))
+    # Parse complete CSV records from the file rather than splitting physical
+    # lines. Prompt fields can legitimately contain quoted newlines.
+    allow_large_csv_fields()
+    rows: list[list[str]] = []
+    with path.open("r", encoding=encoding, newline="") as handle:
+        reader = csv.reader(handle, delimiter=delimiter)
+        for _ in range(4):
+            try:
+                rows.append(next(reader))
+            except StopIteration:
+                break
+    if not rows:
+        result["conclusion"] = "No complete CSV record could be read."
+        return result
     header = rows[0]
     result.update(
         {
@@ -85,7 +109,7 @@ def inspect(path: Path) -> dict[str, Any]:
             "header_columns": header,
             "sample_row_column_counts": [len(row) for row in rows[1:]],
             "sample_preview": [
-                [value[:120] + ("..." if len(value) > 120 else "") for value in row]
+                [value[:800] + ("..." if len(value) > 800 else "") for value in row]
                 for row in rows[1:4]
             ],
         }
@@ -111,6 +135,20 @@ def inspect(path: Path) -> dict[str, Any]:
         name for name in ("split", "dataset", "dataset_split", "source_file") if name in header_set
     ]
     result["split_indicator_columns"] = split_candidates
+
+    if header == ["system", "prompt", "response"]:
+        responses = [row[2].strip() for row in rows[1:] if len(row) == 3]
+        result["is_instruction_tuning_csv"] = True
+        result["sample_responses"] = responses
+        result["contains_label"] = all(
+            response in {"benign", "malicious", "suspicious"}
+            for response in responses
+        )
+        result["conclusion"] = (
+            "This is instruction-tuning CSV data: system defines the task, "
+            "prompt contains a log, and response contains the target answer."
+        )
+        return result
 
     if path.suffix.lower() == ".cvs":
         result["suffix_warning"] = ".cvs is usually a typo; standard CSV uses .csv."
@@ -145,4 +183,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-
