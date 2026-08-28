@@ -1,0 +1,14 @@
+.venv/
+data/
+artifacts/
+deliverables/
+work/
+__pycache__/
+*.pyc
+*.parquet
+*.csv
+*.cbm
+*.pt
+*.pth
+*.log
+.ipynb_checkpoints/
