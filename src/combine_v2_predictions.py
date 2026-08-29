@@ -178,7 +178,7 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v2_hybrid_structured_text_rules",
+            "model": "v3_hybrid_structured_text_semantic_rules",
             "base_predictions": str(args.base_predictions.resolve()),
             "specialist_predictions": str(
                 args.specialist_predictions.resolve()

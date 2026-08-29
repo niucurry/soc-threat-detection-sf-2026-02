@@ -110,7 +110,7 @@ def load_fixed_confusion(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train the V2 TF-IDF specialist for the mixed syslog cluster"
+        description="Train the TF-IDF specialist for the mixed syslog cluster"
     )
     parser.add_argument("--train-raw", type=Path, required=True)
     parser.add_argument("--valid-input", type=Path, required=True)
@@ -206,7 +206,7 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v2_tfidf_sgd_mixed_syslog_specialist",
+            "model": "v3_tfidf_sgd_semantic_rule_specialist",
             "route": "pipeline == syslog and product_name is empty",
             "threshold": threshold,
             "threshold_selection_metric": threshold_selection_metric,

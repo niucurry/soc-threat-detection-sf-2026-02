@@ -24,7 +24,7 @@ def sql_path(path: Path) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the V2 text specialist on its routed raw test rows"
+        description="Run the text specialist on its routed raw input rows"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
