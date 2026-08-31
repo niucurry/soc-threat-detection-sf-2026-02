@@ -21,10 +21,28 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from soc_threat import LABELS  # noqa: E402
 from soc_threat.feature_schema import (  # noqa: E402
-    CATEGORICAL_FEATURES,
-    NUMERIC_FEATURES,
+    CATEGORICAL_FEATURES as V1_CATEGORICAL_FEATURES,
 )
+from soc_threat.feature_schema import NUMERIC_FEATURES as V1_NUMERIC_FEATURES  # noqa: E402
 from soc_threat.metrics import evaluate_predictions  # noqa: E402
+
+
+# Backward-compatible aliases used by older imports and V1 checkpoints.
+CATEGORICAL_FEATURES = V1_CATEGORICAL_FEATURES
+NUMERIC_FEATURES = V1_NUMERIC_FEATURES
+
+
+def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
+    if name == "v1":
+        return list(V1_CATEGORICAL_FEATURES), list(V1_NUMERIC_FEATURES)
+    if name == "v4":
+        from soc_threat.v4_feature_schema import (
+            CATEGORICAL_FEATURES as V4_CATEGORICAL_FEATURES,
+        )
+        from soc_threat.v4_feature_schema import NUMERIC_FEATURES as V4_NUMERIC_FEATURES
+
+        return list(V4_CATEGORICAL_FEATURES), list(V4_NUMERIC_FEATURES)
+    raise ValueError(f"Unknown feature set: {name}")
 
 
 def seed_everything(seed: int) -> None:
@@ -71,28 +89,42 @@ def stratified_sample(frame: pd.DataFrame, max_rows: int | None, seed: int) -> p
     )
 
 
-def read_frame(path: Path, max_rows: int | None, seed: int) -> pd.DataFrame:
-    columns = ["event_id", "label_binary", *CATEGORICAL_FEATURES, *NUMERIC_FEATURES]
+def read_frame(
+    path: Path,
+    max_rows: int | None,
+    seed: int,
+    categorical_features: list[str] | None = None,
+    numeric_features: list[str] | None = None,
+) -> pd.DataFrame:
+    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
+    columns = ["event_id", "label_binary", *categorical_features, *numeric_features]
     frame = pd.read_parquet(path, columns=columns)
     return stratified_sample(frame, max_rows, seed)
 
 
-def fit_preprocessor(train: pd.DataFrame) -> dict[str, Any]:
+def fit_preprocessor(
+    train: pd.DataFrame,
+    categorical_features: list[str] | None = None,
+    numeric_features: list[str] | None = None,
+) -> dict[str, Any]:
+    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
     category_maps: dict[str, dict[str, int]] = {}
     cardinalities: list[int] = []
-    for column in CATEGORICAL_FEATURES:
+    for column in categorical_features:
         values = sorted(train[column].fillna("__MISSING__").astype(str).unique().tolist())
         mapping = {value: index + 1 for index, value in enumerate(values)}
         category_maps[column] = mapping
         # Index 0 is reserved for a category not observed during training.
         cardinalities.append(len(mapping) + 1)
 
-    numeric = train[NUMERIC_FEATURES].apply(pd.to_numeric, errors="coerce").fillna(-1.0)
+    numeric = train[numeric_features].apply(pd.to_numeric, errors="coerce").fillna(-1.0)
     means = numeric.mean(axis=0).astype(float)
     stds = numeric.std(axis=0).replace(0.0, 1.0).astype(float)
     return {
-        "categorical_features": CATEGORICAL_FEATURES,
-        "numeric_features": NUMERIC_FEATURES,
+        "categorical_features": categorical_features,
+        "numeric_features": numeric_features,
         "category_maps": category_maps,
         "cardinalities": cardinalities,
         "numeric_means": means.to_dict(),
@@ -116,7 +148,9 @@ def transform_inputs(
     preprocessor: dict[str, Any],
 ) -> tuple[np.ndarray, np.ndarray]:
     categorical_columns: list[np.ndarray] = []
-    for column in CATEGORICAL_FEATURES:
+    categorical_features = list(preprocessor["categorical_features"])
+    numeric_features = list(preprocessor["numeric_features"])
+    for column in categorical_features:
         mapping = preprocessor["category_maps"][column]
         encoded = (
             frame[column]
@@ -130,13 +164,13 @@ def transform_inputs(
         categorical_columns.append(encoded)
     categorical = np.column_stack(categorical_columns).astype(np.int64, copy=False)
 
-    numeric_frame = frame[NUMERIC_FEATURES].apply(pd.to_numeric, errors="coerce").fillna(-1.0)
+    numeric_frame = frame[numeric_features].apply(pd.to_numeric, errors="coerce").fillna(-1.0)
     means = np.asarray(
-        [preprocessor["numeric_means"][name] for name in NUMERIC_FEATURES],
+        [preprocessor["numeric_means"][name] for name in numeric_features],
         dtype=np.float32,
     )
     stds = np.asarray(
-        [preprocessor["numeric_stds"][name] for name in NUMERIC_FEATURES],
+        [preprocessor["numeric_stds"][name] for name in numeric_features],
         dtype=np.float32,
     )
     numeric = numeric_frame.to_numpy(dtype=np.float32, copy=True)
@@ -245,6 +279,12 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=PROJECT_ROOT / "artifacts" / "v1_npu_tabular",
     )
+    parser.add_argument(
+        "--feature-set",
+        choices=("v1", "v4"),
+        default="v1",
+        help="v1 structured baseline or v4 hybrid-parser/Drain features",
+    )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=8192)
@@ -264,11 +304,28 @@ def main() -> None:
     seed_everything(args.seed)
     device = choose_device(args.device)
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    categorical_features, numeric_features = resolve_feature_set(args.feature_set)
 
     started = time.perf_counter()
-    train_frame = read_frame(args.train, args.max_train_rows, args.seed)
-    valid_frame = read_frame(args.valid, args.max_valid_rows, args.seed + 100)
-    preprocessor = fit_preprocessor(train_frame)
+    train_frame = read_frame(
+        args.train,
+        args.max_train_rows,
+        args.seed,
+        categorical_features,
+        numeric_features,
+    )
+    valid_frame = read_frame(
+        args.valid,
+        args.max_valid_rows,
+        args.seed + 100,
+        categorical_features,
+        numeric_features,
+    )
+    preprocessor = fit_preprocessor(
+        train_frame,
+        categorical_features,
+        numeric_features,
+    )
     train_cat, train_num, train_y = transform(train_frame, preprocessor)
     valid_cat, valid_num, valid_y = transform(valid_frame, preprocessor)
     data_seconds = time.perf_counter() - started
@@ -290,7 +347,7 @@ def main() -> None:
         num_workers=args.num_workers,
     )
 
-    model = TabularThreatModel(preprocessor["cardinalities"], len(NUMERIC_FEATURES)).to(device)
+    model = TabularThreatModel(preprocessor["cardinalities"], len(numeric_features)).to(device)
     weights = class_weights(train_y, args.class_weight_power)
     criterion = nn.CrossEntropyLoss(weight=torch.tensor(weights, device=device))
     optimizer = torch.optim.AdamW(
@@ -314,7 +371,8 @@ def main() -> None:
                 "train_rows": len(train_frame),
                 "valid_rows": len(valid_frame),
                 "class_weights": dict(zip(LABELS, weights.astype(float).tolist())),
-                "cardinalities": dict(zip(CATEGORICAL_FEATURES, preprocessor["cardinalities"])),
+                "feature_set": args.feature_set,
+                "cardinalities": dict(zip(categorical_features, preprocessor["cardinalities"])),
             },
             ensure_ascii=False,
         ),
@@ -394,7 +452,12 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v1_pytorch_npu_structured",
+            "model": (
+                "v4_pytorch_npu_hybrid_drain"
+                if args.feature_set == "v4"
+                else "v1_pytorch_npu_structured"
+            ),
+            "feature_set": args.feature_set,
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": selection_metric,
@@ -416,9 +479,10 @@ def main() -> None:
     checkpoint = {
         "model_state": best_state,
         "cardinalities": preprocessor["cardinalities"],
-        "numeric_count": len(NUMERIC_FEATURES),
+        "numeric_count": len(numeric_features),
         "preprocessor": preprocessor,
         "labels": LABELS,
+        "feature_set": args.feature_set,
     }
     torch.save(checkpoint, args.output_dir / "model.pt")
     (args.output_dir / "preprocessor.json").write_text(

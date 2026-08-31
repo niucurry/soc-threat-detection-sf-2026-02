@@ -11,6 +11,48 @@
 它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
 自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
 
+## V4 实验分支：混合解析 + 分组 Drain + 神经网络
+
+V4 首先只改造第一个 PyTorch/NPU 神经网络，暂不叠加 V2 正文专模和 V3 规则，
+从而能与 V1 结构模型进行公平对比。新增流程如下：
+
+1. Windows XML/JSON、CEF、ASA、VPC Flow 等先做确定性语义提取；
+2. 对 ASA、Linux 和普通 Syslog 等自由文本按
+   `pipeline|vendor|product|format` 分组训练 Drain；
+3. Drain 只在 `train.parquet` 上拟合，验证集仅匹配已冻结模板；
+4. 把模板、动作、协议、事件码、目标端口、解析状态和模板频率作为类别嵌入或
+   数值特征，直接输入原 PyTorch 神经网络；
+5. 保留 V1 全部结构特征，以及空正文、未见模板和解析失败的显式标记。
+
+云平台完整训练：
+
+```bash
+mkdir -p artifacts/v4_drain_neural
+nohup bash scripts/run_cloud_v4_drain_neural.sh data/raw \
+  > artifacts/v4_drain_neural/nohup.log 2>&1 &
+echo $! > artifacts/v4_drain_neural/train.pid
+tail -f artifacts/v4_drain_neural/nohup.log
+```
+
+如数据直接位于 `/root/work`：
+
+```bash
+nohup bash scripts/run_cloud_v4_drain_neural.sh /root/work \
+  > artifacts/v4_drain_neural/nohup.log 2>&1 &
+```
+
+主要结果为：
+
+```text
+artifacts/v4_drain_neural/base/metrics.json
+artifacts/v4_drain_neural/base/valid_predictions.parquet
+artifacts/v4_drain_neural/template_model/manifest.json
+data/processed/v4/v4_manifest.json
+```
+
+重新构建模板和特征时设置 `V4_FORCE_PREPARE=1`。详细方法、烟雾测试和结果回传
+清单见 `docs/V4_DRAIN_NEURAL.md`。
+
 ## 当前版本：V3 语义增强混合模型
 
 V3 延续 V2 的分层检测器，并针对未见日志格式做了泛化审计：
