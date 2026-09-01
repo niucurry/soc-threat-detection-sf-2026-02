@@ -42,6 +42,13 @@ def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
         from soc_threat.v4_feature_schema import NUMERIC_FEATURES as V4_NUMERIC_FEATURES
 
         return list(V4_CATEGORICAL_FEATURES), list(V4_NUMERIC_FEATURES)
+    if name == "v5":
+        from soc_threat.v5_feature_schema import (
+            CATEGORICAL_FEATURES as V5_CATEGORICAL_FEATURES,
+        )
+        from soc_threat.v5_feature_schema import NUMERIC_FEATURES as V5_NUMERIC_FEATURES
+
+        return list(V5_CATEGORICAL_FEATURES), list(V5_NUMERIC_FEATURES)
     raise ValueError(f"Unknown feature set: {name}")
 
 
@@ -263,7 +270,7 @@ def class_weights(labels: np.ndarray, power: float) -> np.ndarray:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train the V1 PyTorch-NPU tabular model")
+    parser = argparse.ArgumentParser(description="Train a PyTorch-NPU tabular threat model")
     parser.add_argument(
         "--train",
         type=Path,
@@ -281,9 +288,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--feature-set",
-        choices=("v1", "v4"),
+        choices=("v1", "v4", "v5"),
         default="v1",
-        help="v1 structured baseline or v4 hybrid-parser/Drain features",
+        help="v1 baseline, v4 hybrid Drain, or v5.1 schema-aware structured features",
     )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
     parser.add_argument("--epochs", type=int, default=20)
@@ -452,11 +459,11 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": (
-                "v4_pytorch_npu_hybrid_drain"
-                if args.feature_set == "v4"
-                else "v1_pytorch_npu_structured"
-            ),
+            "model": {
+                "v1": "v1_pytorch_npu_structured",
+                "v4": "v4_pytorch_npu_hybrid_drain",
+                "v5": "v5_1_pytorch_npu_schema_aware_drain",
+            }[args.feature_set],
             "feature_set": args.feature_set,
             "device": str(device),
             "best_epoch": best_epoch,

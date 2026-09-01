@@ -11,6 +11,28 @@
 它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
 自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
 
+## V5.1 第一阶段：深层结构解析 + 分组 Drain + 神经网络
+
+V5.1 只训练第一个 PyTorch/NPU 神经网络，不使用正文专模、
+人工规则或 V3 覆盖结果。它不是把 Drain 参数继续调大，而是先将
+JSON、脱敏后的 Windows XML、CEF 和 VPC Flow 拆解成有意义的结构字段；
+Drain 只处理剩余的自由文本。新增的核心特征包括结构 schema、语义模板、
+动作、结果、原因、事件类型、认证因子、应用、规则、端口和严重程度。
+
+数据在 `/root/work` 时运行：
+
+```bash
+mkdir -p artifacts/v5_structured_neural
+nohup bash scripts/run_cloud_v5_structured_neural.sh /root/work \
+  > artifacts/v5_structured_neural/nohup.log 2>&1 &
+echo $! > artifacts/v5_structured_neural/train.pid
+tail -f artifacts/v5_structured_neural/nohup.log
+```
+
+训练完成后会自动生成神经网络指标、错误明细、错误分组统计；如果
+V4 预测文件仍在默认位置，还会自动统计 V4 改对了多少、V5.1 新错了
+多少。详细原理、输出文件和回传命令见 `docs/V5_STRUCTURED_NEURAL.md`。
+
 ## V4 实验分支：混合解析 + 分组 Drain + 神经网络
 
 V4 首先只改造第一个 PyTorch/NPU 神经网络，暂不叠加 V2 正文专模和 V3 规则，
