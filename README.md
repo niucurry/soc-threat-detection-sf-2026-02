@@ -11,6 +11,24 @@
 它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
 自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
 
+## V7 实验：分层内容模型 + 未见组合门控
+
+V7 根据 V6 E2 的错误结构，将三分类拆成“正常/威胁”和“恶意/可疑
+子类型”两个任务。正文负责提供威胁证据，产品与来源元数据负责子类型
+基础判断；训练期未见过的 `product + content_family + action` 组合会降低
+正文对子类型的影响。组合频次只使用训练输入，不使用标签或验证数据。
+
+```bash
+mkdir -p artifacts/v7_hierarchical_content
+nohup bash scripts/run_cloud_v7_hierarchical_content.sh /root/work \
+  > artifacts/v7_hierarchical_content/nohup.log 2>&1 &
+echo $! > artifacts/v7_hierarchical_content/train.pid
+tail -f artifacts/v7_hierarchical_content/nohup.log
+```
+
+V7 继续使用固定哈希的原始内容 token，不使用 Drain、`template_id` 或
+schema ID。详细设计、实验组和回传命令见 `docs/V7_HIERARCHICAL_CONTENT.md`。
+
 ## V6 实验：内容学习双塔神经网络
 
 V6 不使用 `template_id`、`schema_id`、`semantic_template_id` 或 Drain
