@@ -13,6 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--v4-metrics", type=Path)
     parser.add_argument("--v5-metrics", type=Path)
     parser.add_argument("--v6-metrics", type=Path)
+    parser.add_argument("--v7-metrics", type=Path)
     return parser.parse_args()
 
 
@@ -53,6 +54,7 @@ def main() -> None:
         ("v4", args.v4_metrics),
         ("v5", args.v5_metrics),
         ("v6_e2", args.v6_metrics),
+        ("v7_h2", args.v7_metrics),
     )
     for name, path in baselines:
         if path is not None and path.is_file():

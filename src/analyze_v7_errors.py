@@ -20,6 +20,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--v4-predictions", type=Path)
     parser.add_argument("--v5-predictions", type=Path)
     parser.add_argument("--v6-predictions", type=Path)
+    parser.add_argument("--v7-predictions", type=Path)
     parser.add_argument("--top-k", type=int, default=40)
     return parser.parse_args()
 
@@ -97,6 +98,7 @@ def main() -> None:
         "v4_comparison": args.v4_predictions,
         "v5_comparison": args.v5_predictions,
         "v6_e2_comparison": args.v6_predictions,
+        "v7_h2_comparison": args.v7_predictions,
     }
     required.extend(path for path in optional.values() if path is not None)
     for path in required:

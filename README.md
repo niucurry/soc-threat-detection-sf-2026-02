@@ -112,7 +112,28 @@ data/processed/v4/v4_manifest.json
 重新构建模板和特征时设置 `V4_FORCE_PREPARE=1`。详细方法、烟雾测试和结果回传
 清单见 `docs/V4_DRAIN_NEURAL.md`。
 
-## 当前版本：V3 语义增强混合模型
+## 当前实验：V8 多视图内容与证据保留
+
+V8延续V7分层神经网络，针对V7剩余46条威胁漏报进行两项独立改进：
+
+- 将单个96-token正文改成开头、中部、结尾、键值关系四个视图；
+- 在训练期约束最终威胁头不能无条件消除元数据或内容辅助头的有效证据。
+
+V8包含三组对照：`a1_multiview_standard`、`b1_raw_evidence` 和
+`c1_multiview_evidence`。完整方法、恢复机制、输出和验收条件见
+`docs/V8_MULTIVIEW_EVIDENCE.md`。
+
+云端数据在 `/root/work` 时运行：
+
+```bash
+mkdir -p artifacts/v8_multiview_evidence
+nohup bash scripts/run_cloud_v8_multiview_evidence.sh /root/work \
+  > artifacts/v8_multiview_evidence/nohup.log 2>&1 &
+echo $! > artifacts/v8_multiview_evidence/train.pid
+tail -f artifacts/v8_multiview_evidence/nohup.log
+```
+
+## V3 语义增强混合模型
 
 V3 延续 V2 的分层检测器，并针对未见日志格式做了泛化审计：
 
