@@ -11,6 +11,25 @@
 它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
 自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
 
+## V6 实验：内容学习双塔神经网络
+
+V6 不使用 `template_id`、`schema_id`、`semantic_template_id` 或 Drain
+聚类号做分类。它保留动作、原因、事件码和字段名等内容，屏蔽 IP、
+UUID、时间和脱敏实体，然后使用固定哈希的单词、双词和字符 n-gram
+嵌入学习日志内容。实验同时训练内容单模型、V1+原文融合、V1+字段
+感知内容融合三组模型。
+
+```bash
+mkdir -p artifacts/v6_content_neural
+nohup bash scripts/run_cloud_v6_content_neural.sh /root/work \
+  > artifacts/v6_content_neural/nohup.log 2>&1 &
+echo $! > artifacts/v6_content_neural/train.pid
+tail -f artifacts/v6_content_neural/nohup.log
+```
+
+内容预处理使用原子分片；云环境中断后重新执行同一命令即可续跑。
+详细设计和结果回传命令见 `docs/V6_CONTENT_NEURAL.md`。
+
 ## V5.1 第一阶段：深层结构解析 + 分组 Drain + 神经网络
 
 V5.1 只训练第一个 PyTorch/NPU 神经网络，不使用正文专模、
