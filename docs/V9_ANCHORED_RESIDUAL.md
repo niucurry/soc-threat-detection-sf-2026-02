@@ -105,6 +105,17 @@ tail -f artifacts/v9_anchored_residual/nohup.log
 artifacts/v7_hierarchical_content/h2_hierarchical_novelty/model.pt
 ```
 
+如果旧云实例只保留了V7指标或预测而缺少 `model.pt`，先更新本分支，再重新运行V7脚本。
+V7脚本现在只有在模型、指标和预测三个文件都完整时才跳过；H1完整时会复用，只重训缺失的
+H2：
+
+```bash
+mkdir -p artifacts/v7_hierarchical_content
+nohup bash scripts/run_cloud_v7_hierarchical_content.sh /root/work \
+  > artifacts/v7_hierarchical_content/recover.log 2>&1 &
+tail -f artifacts/v7_hierarchical_content/recover.log
+```
+
 V6、V8特征和V8分片存在时会直接复用。V9只额外执行一次按 `event_id` 的V6/V8连接，不会
 重新解析全部长日志。云平台中断后重复同一条命令即可；已有 `metrics.json` 的运行会跳过。
 

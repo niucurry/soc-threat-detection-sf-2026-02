@@ -62,8 +62,11 @@ train_and_audit() {
   local valid_path="$4"
   local run_dir="${OUTPUT_ROOT}/${run_name}"
   mkdir -p "${run_dir}" "${run_dir}/analysis"
-  if [[ -f "${run_dir}/metrics.json" && "${V9_FORCE_TRAIN:-0}" != "1" ]]; then
-    echo "${run_name} metrics already exist; skipping completed experiment."
+  if [[ -f "${run_dir}/metrics.json" \
+        && -f "${run_dir}/model.pt" \
+        && -f "${run_dir}/valid_predictions.parquet" \
+        && "${V9_FORCE_TRAIN:-0}" != "1" ]]; then
+    echo "${run_name} model, metrics, and predictions exist; skipping completed experiment."
   else
     python -u src/train_anchored_residual.py \
       --anchor-model "${ANCHOR_MODEL}" \

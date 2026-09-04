@@ -56,8 +56,11 @@ for index in "${!GATE_MODES[@]}"; do
   run_name="${RUN_NAMES[$index]}"
   run_dir="${OUTPUT_ROOT}/${run_name}"
   mkdir -p "${run_dir}"
-  if [[ -f "${run_dir}/metrics.json" && "${V7_FORCE_TRAIN:-0}" != "1" ]]; then
-    echo "${run_name} metrics already exist; skipping completed experiment."
+  if [[ -f "${run_dir}/metrics.json" \
+        && -f "${run_dir}/model.pt" \
+        && -f "${run_dir}/valid_predictions.parquet" \
+        && "${V7_FORCE_TRAIN:-0}" != "1" ]]; then
+    echo "${run_name} model, metrics, and predictions exist; skipping completed experiment."
   else
     python -u src/train_hierarchical_content.py \
       --novelty-gate "${gate_mode}" \
