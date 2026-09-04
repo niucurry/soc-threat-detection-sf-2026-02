@@ -186,6 +186,22 @@ V3 审计了 407 万条训练/验证日志。新增的 `TRAFFIC,drop` 和
 V3 已在 Ascend 云平台完成增量复核：正文模型耗时 59.31 秒，保守版正式综合分
 `0.9998902649`，调优版正式综合分 `1.0`，完整性审计无缺失、重复或标签不一致。
 
+## V9锚定冲突残差实验
+
+V9冻结当前最佳单神经网络V7-H2，只在“最终判benign、元数据分支判threat”的冲突样本
+上允许零初始化残差修改第一层威胁概率。R1使用V7已有内容，R2额外加入从V7 token编码器
+迁移初始化的四视图内容。epoch 0逐行复现V7；训练没有提升时自动回退，不接受退化模型。
+
+云端运行：
+
+```bash
+mkdir -p artifacts/v9_anchored_residual
+nohup bash scripts/run_cloud_v9_anchored_residual.sh /root/work \
+  > artifacts/v9_anchored_residual/nohup.log 2>&1 &
+```
+
+完整设计、恢复方法和结果命令见 [V9_ANCHORED_RESIDUAL.md](docs/V9_ANCHORED_RESIDUAL.md)。
+
 ## V3 云端复核
 
 三份数据仍按下列文件名放置：
