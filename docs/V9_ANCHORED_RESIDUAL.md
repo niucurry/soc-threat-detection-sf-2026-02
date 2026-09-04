@@ -147,3 +147,19 @@ competition_score > 0.9993140394
 
 如果 `best_epoch=0`，表示可信度模型没有找到能在不增加更多错误的前提下修复V7的方法；
 这仍是有效结果，而且输出不会比V7差。
+
+## 8. seed29正式结果
+
+原46错误V7检查点在云实例关闭后丢失。用旧V6恢复的seed29检查点成为当前最高分可复现锚点：
+
+```text
+score=0.9993387402
+errors=57
+threat FP=1
+threat FN=32
+subtype confusion=24
+```
+
+R1和R2都选择epoch 0，结果逐行等于seed29。验证集共有1011条最终/metadata冲突，
+全部是真实benign；32条threat FN没有一条属于冲突候选。因此本实验否定了在当前锚点上
+继续放大metadata证据的方向，并将后续实验转向content反向冲突。

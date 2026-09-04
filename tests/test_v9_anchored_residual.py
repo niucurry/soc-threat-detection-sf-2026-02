@@ -99,6 +99,46 @@ def test_residual_changes_only_final_benign_metadata_threat_conflicts() -> None:
     torch.testing.assert_close(no_conflict.threat_logits, no_conflict.anchor_threat_logits)
 
 
+def test_content_evidence_rescues_only_content_threat_conflicts() -> None:
+    anchor = make_anchor()
+    final_output = anchor.threat_head[-1]
+    assert isinstance(final_output, nn.Linear)
+    with torch.no_grad():
+        final_output.weight.zero_()
+        final_output.bias.copy_(torch.tensor([2.0, -2.0]))
+        anchor.metadata_threat_head.weight.zero_()
+        anchor.metadata_threat_head.bias.copy_(torch.tensor([2.0, -2.0]))
+        anchor.content_threat_head.weight.zero_()
+        anchor.content_threat_head.bias.copy_(torch.tensor([-2.0, 2.0]))
+    model = AnchoredConflictResidualModel(
+        anchor=anchor,
+        residual_input_mode="anchor",
+        evidence_source="content",
+        hash_buckets=128,
+        content_embedding_dim=8,
+        content_output_dim=16,
+        token_dropout=0.0,
+        residual_hidden_dim=16,
+    ).eval()
+    trust_output = model.trust_head[-1]
+    assert isinstance(trust_output, nn.Linear)
+    with torch.no_grad():
+        trust_output.bias.fill_(10.0)
+    output = model(*inputs())
+    assert output.metadata_candidate.tolist() == [False, False]
+    assert output.content_candidate.tolist() == [True, True]
+    assert output.evidence_candidate.tolist() == [True, True]
+    assert output.conflict_mask.tolist() == [True, True]
+    assert torch.all(output.delta_margin > 0)
+
+    with torch.no_grad():
+        anchor.content_threat_head.bias.copy_(torch.tensor([2.0, -2.0]))
+    no_conflict = model(*inputs())
+    assert no_conflict.content_candidate.tolist() == [False, False]
+    assert no_conflict.conflict_mask.tolist() == [False, False]
+    torch.testing.assert_close(no_conflict.threat_logits, no_conflict.anchor_threat_logits)
+
+
 def test_multiview_encoder_starts_from_v7_token_encoder() -> None:
     anchor = make_anchor()
     model = AnchoredConflictResidualModel(

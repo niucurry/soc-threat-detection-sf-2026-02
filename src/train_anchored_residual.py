@@ -25,6 +25,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from soc_threat import LABELS  # noqa: E402
 from soc_threat.anchored_residual_model import (  # noqa: E402
     AnchoredConflictResidualModel,
+    EvidenceSource,
     ResidualInputMode,
 )
 from soc_threat.hierarchical_features import (  # noqa: E402
@@ -213,18 +214,21 @@ def find_reliability_indices(
         frozen = model.anchor_forward(
             moved[0], moved[1], moved[2], moved[3], moved[4], moved[6]
         )
-        metadata_margin = (
-            frozen.metadata_threat_logits[:, 1]
-            - frozen.metadata_threat_logits[:, 0]
+        evidence_logits = (
+            frozen.metadata_threat_logits
+            if model.evidence_source == "metadata"
+            else frozen.content_threat_logits
         )
-        margin_parts.append(metadata_margin.cpu().numpy())
+        evidence_margin = evidence_logits[:, 1] - evidence_logits[:, 0]
+        margin_parts.append(evidence_margin.cpu().numpy())
         label_parts.append(moved[-1].cpu().numpy())
     margins = np.concatenate(margin_parts)
     labels = np.concatenate(label_parts)
-    # Positive reliability examples are true threats for which the metadata
-    # branch votes threat.  The in-sample auxiliary branch can have zero false
-    # positives, so add the benign rows with the highest metadata margins as
-    # hard negatives.  This teaches distrust without using validation labels.
+    # Positive reliability examples are true threats for which the configured
+    # evidence branch votes threat. The in-sample auxiliary branch can have
+    # zero false positives, so add benign rows with the highest evidence
+    # margins as hard negatives. This teaches distrust without validation
+    # labels and works for both V9 metadata and V10 content evidence.
     positive = np.flatnonzero((labels != 0) & (margins > 0)).astype(
         np.int64, copy=False
     )
@@ -269,6 +273,8 @@ def predict(
         "gate",
         "combo_counts",
         "metadata_candidate",
+        "content_candidate",
+        "evidence_candidate",
         "conflict",
         "trust_logit",
         "trust",
@@ -301,6 +307,12 @@ def predict(
         parts["combo_counts"].append(moved[7].cpu().numpy())
         parts["metadata_candidate"].append(
             output.metadata_candidate.cpu().numpy()
+        )
+        parts["content_candidate"].append(
+            output.content_candidate.cpu().numpy()
+        )
+        parts["evidence_candidate"].append(
+            output.evidence_candidate.cpu().numpy()
         )
         parts["conflict"].append(output.conflict_mask.cpu().numpy())
         parts["trust_logit"].append(output.trust_logit.cpu().numpy())
@@ -345,9 +357,14 @@ def evaluate_outputs(
     true_threat_mask = actual_threat == 1
     conflict = outputs["conflict"].astype(bool)
     metadata_candidate = outputs["metadata_candidate"].astype(bool)
+    content_candidate = outputs["content_candidate"].astype(bool)
+    evidence_candidate = outputs["evidence_candidate"].astype(bool)
     changed = predicted != anchor_predicted
     anchor_wrong = anchor_predicted != actual
     final_wrong = predicted != actual
+    threat_changed = threat_predicted != anchor_threat_predicted
+    anchor_threat_wrong = anchor_threat_predicted != actual_threat
+    final_threat_wrong = threat_predicted != actual_threat
     metrics["hierarchical_audit"] = {
         "threat_threshold": float(threat_threshold),
         "threat": binary_metrics(actual_threat, threat_predicted),
@@ -371,12 +388,28 @@ def evaluate_outputs(
     metrics["residual_audit"] = {
         "anchor_errors": int(np.sum(anchor_wrong)),
         "final_errors": int(np.sum(final_wrong)),
+        "anchor_threat_errors": int(np.sum(anchor_threat_wrong)),
+        "final_threat_errors": int(np.sum(final_threat_wrong)),
         "metadata_reliability_candidates": int(np.sum(metadata_candidate)),
         "metadata_candidate_true_threat": int(
             np.sum(metadata_candidate & (actual_threat == 1))
         ),
         "metadata_candidate_true_benign": int(
             np.sum(metadata_candidate & (actual_threat == 0))
+        ),
+        "content_reliability_candidates": int(np.sum(content_candidate)),
+        "content_candidate_true_threat": int(
+            np.sum(content_candidate & (actual_threat == 1))
+        ),
+        "content_candidate_true_benign": int(
+            np.sum(content_candidate & (actual_threat == 0))
+        ),
+        "evidence_reliability_candidates": int(np.sum(evidence_candidate)),
+        "evidence_candidate_true_threat": int(
+            np.sum(evidence_candidate & (actual_threat == 1))
+        ),
+        "evidence_candidate_true_benign": int(
+            np.sum(evidence_candidate & (actual_threat == 0))
         ),
         "conflict_candidates": int(np.sum(conflict)),
         "conflict_true_threat": int(np.sum(conflict & (actual_threat == 1))),
@@ -385,6 +418,13 @@ def evaluate_outputs(
         "fixed_anchor_errors": int(np.sum(anchor_wrong & ~final_wrong)),
         "new_errors": int(np.sum(~anchor_wrong & final_wrong)),
         "both_wrong": int(np.sum(anchor_wrong & final_wrong)),
+        "changed_threat_predictions": int(np.sum(threat_changed)),
+        "fixed_anchor_threat_errors": int(
+            np.sum(anchor_threat_wrong & ~final_threat_wrong)
+        ),
+        "new_threat_errors": int(
+            np.sum(~anchor_threat_wrong & final_threat_wrong)
+        ),
         "positive_delta_rows": int(np.sum(outputs["delta"] > 0)),
         "negative_delta_rows": int(np.sum(outputs["delta"] < 0)),
         "mean_abs_delta_on_candidates": float(
@@ -435,6 +475,15 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument(
         "--residual-input", choices=("anchor", "multiview"), required=True
+    )
+    parser.add_argument(
+        "--evidence-source",
+        choices=("metadata", "content"),
+        default="metadata",
+        help="Frozen branch whose positive vote can rescue an anchor-benign row",
+    )
+    parser.add_argument(
+        "--experiment-version", choices=("v9", "v10"), default="v9"
     )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--epochs", type=int, default=8)
@@ -488,6 +537,7 @@ def main() -> None:
     anchor.load_state_dict(checkpoint["model_state"])
 
     residual_input_mode: ResidualInputMode = args.residual_input
+    evidence_source: EvidenceSource = args.evidence_source
     data_started = time.perf_counter()
     train_data = read_data(
         args.train,
@@ -529,6 +579,7 @@ def main() -> None:
     model = AnchoredConflictResidualModel(
         anchor=anchor,
         residual_input_mode=residual_input_mode,
+        evidence_source=evidence_source,
         hash_buckets=int(anchor_config["hash_buckets"]),
         content_embedding_dim=int(anchor_config["content_embedding_dim"]),
         content_output_dim=int(anchor_config["content_output_dim"]),
@@ -545,7 +596,9 @@ def main() -> None:
         hard_negative_ratio=args.hard_negative_ratio,
     )
     if len(candidate_indices) == 0:
-        raise ValueError("The frozen V7 metadata branch produced no threat candidates")
+        raise ValueError(
+            f"The frozen V7 {evidence_source} branch produced no threat candidates"
+        )
     candidate_dataset = Subset(train_dataset, candidate_indices.tolist())
     train_loader = make_loader(
         candidate_dataset,
@@ -589,16 +642,17 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "stage": "v9_anchor_ready",
+                "stage": f"{args.experiment_version}_anchor_ready",
                 "device": str(device),
                 "residual_input": residual_input_mode,
+                "evidence_source": evidence_source,
                 "train_rows": len(train_dataset),
                 "train_reliability_rows": len(candidate_indices),
                 "train_hard_negative_benign": int(np.sum(candidate_labels == 0)),
-                "train_metadata_positive_malicious": int(
+                "train_evidence_positive_malicious": int(
                     np.sum(candidate_labels == 1)
                 ),
-                "train_metadata_positive_suspicious": int(
+                "train_evidence_positive_suspicious": int(
                     np.sum(candidate_labels == 2)
                 ),
                 "valid_rows": len(valid_dataset),
@@ -713,8 +767,11 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v9_anchored_conflict_residual",
-            "mode": f"anchored_conflict_{residual_input_mode}",
+            "model": f"{args.experiment_version}_anchored_conflict_residual",
+            "mode": (
+                f"anchored_{evidence_source}_conflict_{residual_input_mode}"
+            ),
+            "evidence_source": evidence_source,
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": "competition_score_then_errors_then_log_loss",
@@ -744,6 +801,7 @@ def main() -> None:
         "model_config": {
             "anchor_config": anchor_config,
             "residual_input_mode": residual_input_mode,
+            "evidence_source": evidence_source,
             "content_view_count": args.content_view_count,
             "content_tokens_per_view": args.content_tokens_per_view,
             "residual_hidden_dim": args.residual_hidden_dim,
@@ -790,6 +848,12 @@ def main() -> None:
             "conflict_candidate": outputs["conflict"].astype(np.int8),
             "metadata_reliability_candidate": outputs[
                 "metadata_candidate"
+            ].astype(np.int8),
+            "content_reliability_candidate": outputs[
+                "content_candidate"
+            ].astype(np.int8),
+            "evidence_reliability_candidate": outputs[
+                "evidence_candidate"
             ].astype(np.int8),
             "trust_logit": outputs["trust_logit"],
             "trust_score": outputs["trust"],

@@ -11,6 +11,15 @@ V6_FEATURE_DIR="${PROCESSED_DIR}/v6"
 V8_FEATURE_DIR="${PROCESSED_DIR}/v8"
 V9_FEATURE_DIR="${PROCESSED_DIR}/v9"
 ANCHOR_MODEL="${V9_ANCHOR_MODEL:-artifacts/v7_hierarchical_content/h2_hierarchical_novelty/model.pt}"
+EVIDENCE_SOURCE="${V9_EVIDENCE_SOURCE:-metadata}"
+EXPERIMENT_VERSION="${V9_EXPERIMENT_VERSION:-v9}"
+ANCHOR_RUN_NAME="${V9_ANCHOR_RUN_NAME:-r1_anchor_conflict}"
+MULTIVIEW_RUN_NAME="${V9_MULTIVIEW_RUN_NAME:-r2_multiview_conflict}"
+
+if [[ "${EVIDENCE_SOURCE}" != "metadata" && "${EVIDENCE_SOURCE}" != "content" ]]; then
+  echo "Unsupported evidence source: ${EVIDENCE_SOURCE}"
+  exit 2
+fi
 
 for required_file in train.parquet valid_input.parquet valid_answer_private.parquet; do
   if [[ ! -f "${RAW_DATA_DIR}/${required_file}" ]]; then
@@ -71,6 +80,8 @@ train_and_audit() {
     python -u src/train_anchored_residual.py \
       --anchor-model "${ANCHOR_MODEL}" \
       --residual-input "${residual_input}" \
+      --evidence-source "${EVIDENCE_SOURCE}" \
+      --experiment-version "${EXPERIMENT_VERSION}" \
       --train "${train_path}" \
       --valid "${valid_path}" \
       --output-dir "${run_dir}" \
@@ -108,13 +119,14 @@ train_and_audit() {
     --predictions "${run_dir}/valid_predictions.parquet" \
     --features "${valid_path}" \
     --output-dir "${run_dir}/analysis" \
+    --evidence-source "${EVIDENCE_SOURCE}" \
     2>&1 | tee "${run_dir}/residual_console.log"
 }
 
-# R1 is the narrow control: it learns only whether V7's metadata branch is
-# reliable in a final-benign/metadata-threat conflict.  It needs no V8 data.
+# R1 is the narrow control: it learns whether the configured frozen evidence
+# branch is reliable in a final-benign/branch-threat conflict. It needs no V8.
 train_and_audit \
-  r1_anchor_conflict \
+  "${ANCHOR_RUN_NAME}" \
   anchor \
   "${V6_FEATURE_DIR}/v6_train.parquet" \
   "${V6_FEATURE_DIR}/v6_valid.parquet"
@@ -149,7 +161,7 @@ python -u src/prepare_v9_features.py "${V9_JOIN_ARGS[@]}" \
 # R2 differs from R1 only by adding the transferred head/middle/tail/key-value
 # representation to the learned reliability decision.
 train_and_audit \
-  r2_multiview_conflict \
+  "${MULTIVIEW_RUN_NAME}" \
   multiview \
   "${V9_FEATURE_DIR}/v9_train.parquet" \
   "${V9_FEATURE_DIR}/v9_valid.parquet"
@@ -162,5 +174,5 @@ V7_METRICS="${V9_V7_METRICS:-artifacts/v7_hierarchical_content/h2_hierarchical_n
 [[ -f "${V7_METRICS}" ]] && COMPARE_ARGS+=(--v7-metrics "${V7_METRICS}")
 python src/compare_v7_experiments.py "${COMPARE_ARGS[@]}"
 
-echo "V9 comparison: ${OUTPUT_ROOT}/comparison.json"
+echo "${EXPERIMENT_VERSION} ${EVIDENCE_SOURCE}-evidence comparison: ${OUTPUT_ROOT}/comparison.json"
 echo "Each run contains metrics.json, analysis/error_summary.json, and analysis/residual_summary.json."

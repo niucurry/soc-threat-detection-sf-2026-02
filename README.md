@@ -202,6 +202,24 @@ nohup bash scripts/run_cloud_v9_anchored_residual.sh /root/work \
 
 完整设计、恢复方法和结果命令见 [V9_ANCHORED_RESIDUAL.md](docs/V9_ANCHORED_RESIDUAL.md)。
 
+## V10内容证据救援实验
+
+V10保持seed29 V7-H2完全冻结，只在“最终判benign、独立内容分支判threat”的反向冲突上
+允许零初始化残差。可信度使用训练集threat正例与高content-margin困难benign学习，不把
+验证集审计得到的0.94/0.96阈值写成规则。CR1使用已有冻结表示，CR2额外使用四视图内容；
+epoch 0仍是精确锚点，训练退化时自动回退。
+
+云端运行：
+
+```bash
+mkdir -p artifacts/v10_content_rescue
+nohup env V10_PROCESSED_ROOT=/root/soc-threat-detection-sf-2026-02-1/data/processed \
+  bash scripts/run_cloud_v10_content_rescue.sh /root/work \
+  > artifacts/v10_content_rescue/nohup.log 2>&1 &
+```
+
+完整依据、约束和结果命令见 [V10_CONTENT_RESCUE.md](docs/V10_CONTENT_RESCUE.md)。
+
 ## V3 云端复核
 
 三份数据仍按下列文件名放置：

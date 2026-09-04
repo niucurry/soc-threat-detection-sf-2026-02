@@ -11,6 +11,7 @@ from soc_threat.hierarchical_model import HierarchicalContentModel
 
 
 ResidualInputMode = Literal["anchor", "multiview"]
+EvidenceSource = Literal["metadata", "content"]
 
 
 @dataclass(frozen=True)
@@ -25,6 +26,8 @@ class FrozenAnchorOutput:
     metadata_subtype_logits: torch.Tensor
     applied_gate: torch.Tensor
     metadata_candidate: torch.Tensor
+    content_candidate: torch.Tensor
+    evidence_candidate: torch.Tensor
     conflict_mask: torch.Tensor
 
 
@@ -38,6 +41,8 @@ class AnchoredResidualOutput:
     metadata_subtype_logits: torch.Tensor
     applied_gate: torch.Tensor
     metadata_candidate: torch.Tensor
+    content_candidate: torch.Tensor
+    evidence_candidate: torch.Tensor
     conflict_mask: torch.Tensor
     trust_logit: torch.Tensor
     trust_score: torch.Tensor
@@ -48,10 +53,11 @@ class AnchoredConflictResidualModel(nn.Module):
     """A frozen V7 model with a narrowly scoped, exactly-zero residual.
 
     The residual is allowed to act only when the frozen final threat head says
-    benign while the frozen metadata branch says threat.  Its maximum positive
-    correction is the detached logit gap between those two branches.  At
-    initialization the residual output is exactly zero, so predictions and
-    probabilities are exactly those of the anchor.
+    benign while one configured evidence branch says threat. Its maximum
+    positive correction is the detached logit gap between those two branches.
+    V9 uses metadata evidence; V10 uses content evidence. At initialization the
+    residual output is exactly zero, so predictions and probabilities are
+    exactly those of the anchor.
     """
 
     def __init__(
@@ -59,6 +65,7 @@ class AnchoredConflictResidualModel(nn.Module):
         *,
         anchor: HierarchicalContentModel,
         residual_input_mode: ResidualInputMode,
+        evidence_source: EvidenceSource = "metadata",
         hash_buckets: int,
         content_embedding_dim: int,
         content_output_dim: int,
@@ -71,6 +78,8 @@ class AnchoredConflictResidualModel(nn.Module):
         super().__init__()
         if residual_input_mode not in {"anchor", "multiview"}:
             raise ValueError(f"Unknown residual input mode: {residual_input_mode}")
+        if evidence_source not in {"metadata", "content"}:
+            raise ValueError(f"Unknown evidence source: {evidence_source}")
         if anchor.content_input_mode != "raw":
             raise ValueError("The frozen anchor must use V7 raw-token content")
         if max_conflict_gap <= 0:
@@ -78,6 +87,7 @@ class AnchoredConflictResidualModel(nn.Module):
 
         self.anchor = anchor
         self.residual_input_mode = residual_input_mode
+        self.evidence_source = evidence_source
         self.max_conflict_gap = float(max_conflict_gap)
         for parameter in self.anchor.parameters():
             parameter.requires_grad_(False)
@@ -105,7 +115,7 @@ class AnchoredConflictResidualModel(nn.Module):
         # Four scalars describe metadata/content confidence and novelty.  The
         # final anchor margin is deliberately excluded from the trust input:
         # otherwise an in-sample trust classifier can merely copy V7 instead
-        # of learning when metadata is reliable.
+        # of learning when the configured evidence branch is reliable.
         input_dim = 128 + 64 + content_output_dim + 4
         if self.multiview_encoder is not None:
             input_dim += content_output_dim
@@ -167,8 +177,17 @@ class AnchoredConflictResidualModel(nn.Module):
             metadata_margin = (
                 metadata_threat_logits[:, 1] - metadata_threat_logits[:, 0]
             )
+            content_margin = (
+                content_threat_logits[:, 1] - content_threat_logits[:, 0]
+            )
             metadata_candidate = metadata_margin > 0
-            conflict_mask = (anchor_margin < 0) & metadata_candidate
+            content_candidate = content_margin > 0
+            evidence_candidate = (
+                metadata_candidate
+                if self.evidence_source == "metadata"
+                else content_candidate
+            )
+            conflict_mask = (anchor_margin < 0) & evidence_candidate
         return FrozenAnchorOutput(
             metadata=metadata,
             semantic=semantic,
@@ -180,6 +199,8 @@ class AnchoredConflictResidualModel(nn.Module):
             metadata_subtype_logits=metadata_subtype_logits,
             applied_gate=applied_gate,
             metadata_candidate=metadata_candidate,
+            content_candidate=content_candidate,
+            evidence_candidate=evidence_candidate,
             conflict_mask=conflict_mask,
         )
 
@@ -211,7 +232,12 @@ class AnchoredConflictResidualModel(nn.Module):
             frozen.content_threat_logits[:, 1]
             - frozen.content_threat_logits[:, 0]
         )
-        conflict_gap = (metadata_margin - anchor_margin).clamp(
+        evidence_margin = (
+            metadata_margin
+            if self.evidence_source == "metadata"
+            else content_margin
+        )
+        conflict_gap = (evidence_margin - anchor_margin).clamp(
             min=0.0, max=self.max_conflict_gap
         )
         scalar_context = torch.stack(
@@ -252,6 +278,8 @@ class AnchoredConflictResidualModel(nn.Module):
             metadata_subtype_logits=frozen.metadata_subtype_logits,
             applied_gate=frozen.applied_gate,
             metadata_candidate=frozen.metadata_candidate,
+            content_candidate=frozen.content_candidate,
+            evidence_candidate=frozen.evidence_candidate,
             conflict_mask=frozen.conflict_mask,
             trust_logit=trust_logit,
             trust_score=trust_score,
