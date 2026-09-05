@@ -28,26 +28,9 @@ from soc_threat.metrics import evaluate_predictions  # noqa: E402
 
 
 def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
-    canonical = name
-    if canonical == "tabular":
-        return list(TABULAR_CATEGORICAL_FEATURES), list(TABULAR_NUMERIC_FEATURES)
-    if canonical == "drain":
-        from soc_threat.drain_feature_schema import (
-            CATEGORICAL_FEATURES as DRAIN_CATEGORICAL_FEATURES,
-        )
-        from soc_threat.drain_feature_schema import NUMERIC_FEATURES as DRAIN_NUMERIC_FEATURES
-
-        return list(DRAIN_CATEGORICAL_FEATURES), list(DRAIN_NUMERIC_FEATURES)
-    if canonical == "structured":
-        from soc_threat.structured_feature_schema import (
-            CATEGORICAL_FEATURES as STRUCTURED_CATEGORICAL_FEATURES,
-        )
-        from soc_threat.structured_feature_schema import NUMERIC_FEATURES as STRUCTURED_NUMERIC_FEATURES
-
-        return list(STRUCTURED_CATEGORICAL_FEATURES), list(STRUCTURED_NUMERIC_FEATURES)
-    raise ValueError(
-        f"Unknown feature set: {name}; use tabular, drain, or structured"
-    )
+    if name != "tabular":
+        raise ValueError("This branch uses tabular features")
+    return list(TABULAR_CATEGORICAL_FEATURES), list(TABULAR_NUMERIC_FEATURES)
 
 
 def seed_everything(seed: int) -> None:
@@ -287,8 +270,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--feature-set",
         default="tabular",
-        choices=("tabular", "drain", "structured"),
-        help="tabular (v1.0), drain (v1.1), or structured (v1.2)",
+        choices=("tabular",),
+        help="tabular structural inputs",
     )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
     parser.add_argument("--selection-metric", choices=("competition_score", "macro_f1"), default="competition_score")

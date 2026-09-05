@@ -22,7 +22,7 @@ MULTIVIEW_RUN_NAME="${V5_MULTIVIEW_RUN_NAME:-exp02_multiview_content}"
 RUN_MULTIVIEW="${V5_RUN_MULTIVIEW:-0}"
 
 case "${MODEL_VERSION}" in
-  v5.0|v5.1|v5.2) ;;
+  v5.2) ;;
   *) echo "Unsupported model version: ${MODEL_VERSION}"; exit 2 ;;
 esac
 if [[ "${EVIDENCE_SOURCE}" != "metadata" && "${EVIDENCE_SOURCE}" != "content" ]]; then

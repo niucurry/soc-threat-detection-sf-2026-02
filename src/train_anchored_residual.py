@@ -483,7 +483,7 @@ def parse_args() -> argparse.Namespace:
         help="Frozen branch whose positive vote can rescue an anchor-benign row",
     )
     parser.add_argument(
-        "--experiment-version", choices=("v5.0", "v5.1", "v5.2"), default="v5.2"
+        "--experiment-version", choices=("v5.2",), default="v5.2"
     )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--epochs", type=int, default=8)
