@@ -1,175 +1,127 @@
-# SOC日志三分类项目
+# v2.2：混合模型语义规则与泛化审计
 
-目标：将每条日志分类为 `benign`（正常）、`malicious`（恶意）或
-`suspicious`（可疑）。所有实验都遵守两个原则：不使用 `event_id` 猜标签，
-并始终在官方提供的私有验证标签上报告三类分别的效果。
+本分支：`release/v2.2-semantic`。统一入口`scripts/run.sh`调用`scripts/run_cloud_v2_2_hybrid.sh`。
+完整验证范围为2,014,052行；路由和烟雾结果在表中单独标明。
 
-## 推荐赛方镜像
+## 模型定义与改动理由
 
-使用：`pytorch_v1.1:2.4.0-npu-py310-ubuntu22.04-aarch64`。
+类别字段各自Embedding（维数min(24,max(3,round(2*cardinality^0.25))))，数值按训练均值/标准差标准化并截断[-12,12]。拼接→Linear256→BatchNorm→SiLU→Dropout0.15→Linear128→BatchNorm→SiLU→Dropout0.10→Linear64→SiLU→Linear3，交叉熵训练。未知类别索引0。
 
-它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
-自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
+保持全量Score选择，expanded规则增加两个精确语义条件；正文仍是TF-IDF/SGD。家族/字符实验独立于正式推理。
 
-## 当前版本：V3 语义增强混合模型
+## 完整输入特征
 
-V3 延续 V2 的分层检测器，并针对未见日志格式做了泛化审计：
+### 类别输入（8个）
 
-1. PyTorch 结构模型负责全部日志的三分类基础判断；
-2. 对 `pipeline=syslog` 且产品名为空的混合簇，使用日志正文
-   TF-IDF + SGD 二分类器重新判断正常/恶意；
-3. 对 `REJECT OK`、Windows 4625、明确的防火墙拒绝/丢弃、URL 阻断等
-   高置信安全语义使用规则兜底；
-4. 提供保守版和使用少量可疑事件规则的调优版，并严格校验验证预测的
-   `event_id` 完整性。
+| 字段 | 定义 |
+|---|---|
+| `pipeline` | 采集管道；空串/NULL归为缺失类别。 |
+| `product_name` | 产品名称；不直接决定威胁标签。 |
+| `product_group` | 产品粗组：missing、asa、aws_vpc、other_suspicious_products（Precinct/Falcon）、other。 |
+| `src_ip_kind` | 源地址外形类别：missing、ipv4_shape、host_token、other；仅按当前正则判外形。 |
+| `port_bucket` | 源端口桶：missing、0–1023、1024–49151、49152以上；基于可解析整数。 |
+| `message_length_bucket` | 正文长度桶：missing、1–120、121–180、181–300、301–1000、1001以上。 |
+| `structure_combo` | pipeline、product_group、message_length_bucket和是否含deny拼接的类别。 |
+| `network_missing_pattern` | 源IP/目的IP/源端口三个缺失位按顺序拼接，如111。 |
 
-训练集恶意占比约 5.43%，官方验证集约 0.70%。V1 结构特征无法区分
-产品名为空的正常和恶意日志，导致 9,793 条正常日志被误报为恶意；V2 的
-正文专用模型用于解决这个问题。
+### 数值输入（23个）
 
-正式评分按下式计算：
+| 字段 | 定义 |
+|---|---|
+| `src_port_number` | 原始src_port尝试转整数，缺失填-1。 |
+| `src_ip_missing` | src_ip对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `dst_ip_missing` | dst_ip对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `src_port_missing` | src_port对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `src_host_missing` | src_host对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `dst_host_missing` | dst_host对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `username_missing` | username对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `product_missing` | product对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `message_missing` | message对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `network_present_count` | src_ip、dst_ip、src_port三个字段存在数量，0–3。 |
+| `message_length` | 原始正文字符长度，空正文为0。 |
+| `src_ip_length` | src_ip对应字符串字符长度，空值按空串。 |
+| `dst_ip_length` | dst_ip对应字符串字符长度，空值按空串。 |
+| `src_host_length` | src_host对应字符串字符长度，空值按空串。 |
+| `dst_host_length` | dst_host对应字符串字符长度，空值按空串。 |
+| `username_length` | username对应字符串字符长度，空值按空串。 |
+| `message_has_deny` | 小写正文是否含deny子串；不是完整语义判断。 |
+| `message_has_allow` | 小写正文是否含allow子串。 |
+| `message_has_accepted` | 小写正文是否含accepted子串。 |
+| `message_has_failed` | 小写正文是否含failed子串。 |
+| `message_has_blocked` | 小写正文是否含blocked子串。 |
+| `message_starts_angle` | 去左空白后的正文首字符是否为<。 |
+| `message_contains_json` | 正文是否包含{；并不表示JSON解析成功。 |
 
-```text
-Final Score = 0.40 × Threat-Binary-F1
-            + 0.25 × Threat-Binary-Recall
-            + 0.15 × Threat Recall
-            + 0.10 × Macro-F1
-            + 0.05 × Soft Label Score
-            + 0.05 × Balanced Accuracy
-```
+正文专模另输入message_sanitized全文；路由使用pipeline和product_name；可疑覆盖读取产品和正文。event_id仅连接，label_binary仅训练/评价。
 
-其中 Threat-Binary 将 `suspicious` 和 `malicious` 合并为威胁类；Threat
-Recall 是两种威胁召回率的平均值。当前代码根据评分说明把 Soft Label Score
-实现为逐行平均：预测完全正确计 1，`suspicious` 与 `malicious` 相互错判计
-0.5，正常与威胁之间错判计 0。正文专模阈值和结构模型最佳轮次均优先按照
-Final Score 选择，不再只优化 Macro-F1。
+## 训练、实验结果、缺陷与后续解决方法
 
-在提供的 2,014,052 条官方外部验证数据上，本地复现实验如下：
+训练默认AdamW，lr=0.002，weight_decay=1e-5，batch=8192，num_workers=4，梯度范数裁剪5，seed=20260828，类别权重power=0。v1.x最多20轮/patience4；v2.x基础最多12轮/patience3。
 
-| 版本 | 正式综合分 | Macro-F1 | 错误行数 | 说明 |
-|---|---:|---:|---:|---|
-| V1 无类别权重 | 0.957210 | 0.912286 | 9,857 | 原结构模型 |
-| V3 保守版 | 0.999890 | 0.999958 | 10 | 恶意语义增强，不使用可疑事件覆盖规则 |
-| V3 调优版 | 1.000000 | 1.000000 | 0 | 再增加 DLP 和 Duo 高精度可疑规则 |
+正文设置：TF-IDF word(1,2)，lowercase=True，min_df=2，max_df=0.9999，max_features=200000，sublinear_tf=True，float32；SGD log_loss/L2，alpha=1e-6，max_iter=30，tol=1e-4，average=True，seed=20260828。
 
-这些是已提供验证标签上的结果，不代表隐藏数据一定满分。调优版更贴合当前
-验证分布，保守版对新数据源的假设更少，后续仍需通过隔离验证比较泛化能力。
+精确原文审计：954,292个验证benign在训练出现且标签一致；malicious和suspicious原文重叠为0。
+长hex和数字归一化后，这两类完整模板重叠仍为0；归一化前48字符家族覆盖5,266个验证恶意。
+验证209行来自2个未见产品，pipeline无新增枚举。正常原文重复与攻击格式漂移同时存在。
 
-V3 审计了 407 万条训练/验证日志。新增的 `TRAFFIC,drop` 和
-`THREAT,url + block-url` 语义分别覆盖 5,826 和 200 条验证恶意日志，正常命中
-均为 0。高置信恶意规则总覆盖由 8,024 提升到 14,050，云端正文决策阈值由约
-0.059 提升到 0.199。剩余两条 Windows 4672 事件继续交给正文模型判断，因为
-该事件码在真实环境中不必然代表攻击。
+| 实验 | 实测结果 | 决策 |
+|---|---|---|
+| 模板首折 | 272,972训练/69,848留出；词80.73秒，字符263.83秒；内部均约0.999970 Macro-F1、2错 | 内部近满分未迁移外部 |
+| 首折外部 | 词原始Macro-F1约0.75909、恶意召回0.36379；加基础规则约0.85828、召回0.57102 | 字符/词符融合无改善且更慢 |
+| 五折家族隔离 | 内部错误0、0、0、2、24；外部原始恶意召回均约36.379%，加规则约57.102% | 当前隔离不足以模拟完整厂商迁移 |
+| IP/hex/数字归一化 | 词表200,000→18,669；约38→24秒；外部只多识别2个恶意 | 未替换正式模型 |
+| 无标签间隙阈值 | 五折错误4、1、0、38、287；阈值约0.0612、0.0413、0.0400、0.0713、0.1302 | 不稳定，未采用 |
+| 五折概率融合 | 均值、中位数、最小、最大、logit均比较 | 未解决不同折压低不同家族 |
 
-V3 已在 Ascend 云平台完成增量复核：正文模型耗时 59.31 秒，保守版正式综合分
-`0.9998902649`，调优版正式综合分 `1.0`，完整性审计无缺失、重复或标签不一致。
+排除基础规则后，benign最大恶意概率约0.054065，malicious最小约0.059739，间隔0.005674；
+6,028个未覆盖恶意的中位概率约0.21654。高权重有deny/protocol/dport，也有0x0/src/dst、
+身份与时间片段；分类全对仍可能对漂移敏感。
 
-## V3 云端复核
+| 规则候选 | 训练恶意 | 验证恶意 | benign命中 | 新增覆盖 |
+|---|---:|---:|---:|---:|
+| TRAFFIC,drop | 0 | 5,826 | 0 | 5,826 |
+| THREAT,url且block-url | 0 | 200 | 0 | 200 |
+| 协议字段后deny | 0 | 5,820 | 0 | 5,820 |
+| 任意,deny, | 0 | 5,838 | 0 | 5,826 |
+| decision=blocked | 260 | 0 | 0 | 260 |
+| act=deny | 50 | 0 | 0 | 50 |
 
-三份数据仍按下列文件名放置：
+正式只新增,traffic,drop,和,threat,url,且block-url两条件。总计14,050恶意、0正常命中。
+剩2条Windows4672由模型判断，没有硬写4672=恶意：授予特殊权限也可由正常系统账号触发。
 
-```text
-data/raw/train.parquet
-data/raw/valid_input.parquet
-data/raw/valid_answer_private.parquet
-```
+本地阈值0.17455598153173923，云端0.1985421571880579，正文耗时59.31秒，
+路由Log Loss=0.008998715901508317。
 
-V3 只更新正文规则层和阈值，直接复用已经完成的 V2 结构模型验证预测，避免
-重复执行 NPU 训练。在推荐镜像中使用后台方式运行：
+| 实验 | 全量Score | Macro-F1 | 错误 | 全量Log Loss |
+|---|---:|---:|---:|---:|
+| exp01保守 | 0.9998902649047847 | 0.9999579178042195 | 10 | 0.0014145733444869055 |
+| exp02可疑覆盖 | 1.0 | 1.0 | 0 | 0.0013629193716559853 |
 
-```bash
-mkdir -p artifacts/v3_semantic_rules
-nohup bash scripts/run_cloud_v3.sh data/raw \
-  > artifacts/v3_semantic_rules/nohup.log 2>&1 &
-echo $! > artifacts/v3_semantic_rules/train.pid
-cat artifacts/v3_semantic_rules/train.pid
-```
+规则扩大当前概率间隔，但新规则纯度来自反复使用的验证集，尚无独立实验支持跨格式鲁棒性。
+这一模型包含两个分类器与规则，之后的单神经网络路线单独报告。
 
-如果数据位于其他目录：
-
-```bash
-mkdir -p artifacts/v3_semantic_rules
-nohup bash scripts/run_cloud_v3.sh /root/work \
-  > artifacts/v3_semantic_rules/nohup.log 2>&1 &
-echo $! > artifacts/v3_semantic_rules/train.pid
-cat artifacts/v3_semantic_rules/train.pid
-```
-
-脚本默认复用 `artifacts/v2_hybrid/base/valid_predictions.parquet`。如果 V2 基础
-预测在其他位置，可在命令前设置 `V3_BASE_PREDICTIONS=/实际路径/valid_predictions.parquet`。
-
-查看总进度日志：
-
-```bash
-tail -f artifacts/v3_semantic_rules/nohup.log
-```
-
-按 `Ctrl+C` 只退出日志查看，不会终止后台训练。检查进程和 NPU：
+## 云平台运行
 
 ```bash
-PID=$(cat artifacts/v3_semantic_rules/train.pid)
-ps -fp "$PID"
-npu-smi info
+git fetch origin
+git switch release/v2.2-semantic
+git pull --ff-only
 ```
 
-正文模型开始训练后，还可以单独查看输出：
+/root/work应含train.parquet、valid_input.parquet、valid_answer_private.parquet。
 
 ```bash
-tail -f artifacts/v3_semantic_rules/text/train_console.log
+mkdir -p artifacts/v2_2_hybrid
+nohup bash scripts/run.sh /root/work > artifacts/v2_2_hybrid/nohup.log 2>&1 &
+echo $! > artifacts/v2_2_hybrid/train.pid
+tail -f artifacts/v2_2_hybrid/nohup.log
 ```
 
-主要结果位于：
 
-```text
-artifacts/v3_semantic_rules/text/model.joblib
-artifacts/v3_semantic_rules/validation_conservative/metrics.json
-artifacts/v3_semantic_rules/validation_tuned/metrics.json
-```
+模型、预处理配置、metrics.json、valid_predictions.parquet、manifest、环境和提交号一起保存。
 
-## V1 结构基线
+## 复现范围
 
-V1 云端主线是“类别嵌入 + 数值网络”的 PyTorch 结构化模型：
+上述指标来自已经返回的完整实验输出。本轮仓库整理未重新执行云端全量训练，本地检查不能证明新提交逐位复现原指标。改变特征列名后应重新生成对应特征并重训；不能只改文件名作为复现。
 
-- 不使用 `event_id`、完整时间、原始 IP、原始主机名或原始用户名；
-- 使用产品、采集管道、端口范围、字段缺失情况、消息长度和少量关键词；
-- 使用可调节的类别平衡权重，避免模型只预测占比最大的正常类别；
-- 主要评价指标为 Macro-F1，同时报告每一类召回率和混淆矩阵。
-
-当前上传包只包含PyTorch-NPU主线代码，避免在ARM镜像中安装不必要的CPU模型依赖。
-
-## V1 上传目录
-
-把三份原始文件放到：
-
-```text
-data/raw/train.parquet
-data/raw/valid_input.parquet
-data/raw/valid_answer_private.parquet
-```
-
-随后在项目根目录运行：
-
-```bash
-bash scripts/run_cloud_v1.sh
-```
-
-如果三份原始文件已经直接放在云平台的 `/root/work`，不需要复制文件，运行：
-
-```bash
-bash scripts/run_cloud_v1.sh /root/work
-```
-
-正式训练前可在相同的20万训练/验证样本上比较四种类别补偿强度：
-
-```bash
-bash scripts/run_weight_sweep_v1.sh
-```
-
-汇总结果保存在 `artifacts/v1_weight_sweep/comparison.json`，用于选择能兼顾
-攻击召回与误报数量的正式参数。
-
-训练日志会实时显示，并保存到
-`artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
-也会保存在同一目录。
-
-详细上传和故障处理步骤见 `UPLOAD_INSTRUCTIONS.md`。
+[训练环境](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/ENVIRONMENT.md) · [评分公式](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/SCORING.md) · [完整开发日志](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/DEVELOPMENT_LOG_STANDARD.md)

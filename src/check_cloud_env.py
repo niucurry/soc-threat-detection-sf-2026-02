@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import platform
 import sys
+from importlib.metadata import PackageNotFoundError, version
 
 import duckdb
 import numpy
@@ -12,6 +13,10 @@ import torch
 
 
 def main() -> None:
+    try:
+        drain3_version = version("drain3")
+    except PackageNotFoundError:
+        drain3_version = None
     torch_npu_version = None
     npu_available = False
     npu_count = 0
@@ -43,6 +48,7 @@ def main() -> None:
         "pandas": pandas.__version__,
         "pyarrow": pyarrow.__version__,
         "duckdb": duckdb.__version__,
+        "drain3": drain3_version,
     }
     print(json.dumps(result, ensure_ascii=False, indent=2), flush=True)
     if not npu_available:
@@ -54,4 +60,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

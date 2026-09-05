@@ -6,6 +6,7 @@ import pandas as pd
 
 SPECIALIST_LABELS = ["benign", "malicious"]
 FULL_LABELS = ["benign", "malicious", "suspicious"]
+DEFAULT_RULE_PROFILE = "expanded"
 
 
 def specialist_route(frame: pd.DataFrame) -> np.ndarray:
@@ -16,11 +17,13 @@ def specialist_route(frame: pd.DataFrame) -> np.ndarray:
     return ((pipeline == "syslog") & (product_name == "")).to_numpy()
 
 
-def strong_malicious_rules(messages: pd.Series) -> np.ndarray:
+def strong_malicious_rules(messages: pd.Series, *, profile: str = DEFAULT_RULE_PROFILE) -> np.ndarray:
     """Return high-precision malicious semantics verified on labeled audit sets."""
 
     lowered = messages.fillna("").astype(str).str.lower()
-    return (
+    if profile not in {"basic", "expanded"}:
+        raise ValueError(f"Unknown rule profile: {profile}")
+    basic = (
         lowered.str.contains("reject ok", regex=False)
         | lowered.str.contains('\"code\":\"4625\"', regex=False)
         | lowered.str.startswith("org-1780 ::: tags=")
@@ -30,11 +33,13 @@ def strong_malicious_rules(messages: pd.Series) -> np.ndarray:
         )
         | lowered.str.contains(" deny ", regex=False)
         | lowered.str.contains(",traffic,deny,", regex=False)
-        | lowered.str.contains(",traffic,drop,", regex=False)
-        | (
-            lowered.str.contains(",threat,url,", regex=False)
-            & lowered.str.contains("block-url", regex=False)
-        )
+    ).to_numpy()
+    if profile == "basic":
+        return basic
+    return basic | (
+        lowered.str.contains(",traffic,drop,", regex=False)
+        | (lowered.str.contains(",threat,url,", regex=False)
+           & lowered.str.contains("block-url", regex=False))
     ).to_numpy()
 
 
@@ -231,9 +236,11 @@ def best_competition_threshold(
 def force_rule_probabilities(
     probabilities: np.ndarray,
     messages: pd.Series,
+    *,
+    profile: str = DEFAULT_RULE_PROFILE,
 ) -> tuple[np.ndarray, np.ndarray]:
     adjusted = np.asarray(probabilities, dtype=float).copy()
-    rules = strong_malicious_rules(messages)
+    rules = strong_malicious_rules(messages, profile=profile)
     adjusted[rules] = 1.0
     return adjusted, rules
 

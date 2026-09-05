@@ -28,7 +28,7 @@ from train_text_specialist import load_route_frames  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Compare V3 text models on grouped generalization holdouts"
+        description="Compare v2.2 text models on grouped generalization holdouts"
     )
     parser.add_argument("--train-raw", type=Path, required=True)
     parser.add_argument("--valid-input", type=Path, required=True)
@@ -36,7 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v3_text_experiment",
+        default=PROJECT_ROOT / "artifacts" / "v2_2_text_experiment",
     )
     parser.add_argument("--folds", type=int, default=5)
     parser.add_argument("--holdout-fold", type=int, default=0)
@@ -368,7 +368,7 @@ def main() -> None:
         key=lambda item: float(item["rules"]["holdout"]["macro_f1"]),
     )
     report = {
-        "model": "v3_text_generalization_experiment",
+        "model": "v2.2_text_generalization_experiment",
         "split": {
             "folds": args.folds,
             "holdout_fold": args.holdout_fold,

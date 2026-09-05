@@ -16,10 +16,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from soc_threat import LABELS  # noqa: E402
-from soc_threat.feature_schema import (  # noqa: E402
-    CATEGORICAL_FEATURES,
-    NUMERIC_FEATURES,
-)
 from train_npu_tabular import (  # noqa: E402
     TabularThreatModel,
     choose_device,
@@ -31,7 +27,7 @@ from train_npu_tabular import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run an unlabeled feature parquet through a V1 checkpoint"
+        description="Run an unlabeled feature parquet through a v1.x checkpoint"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True)
@@ -54,9 +50,14 @@ def main() -> None:
 
     started = time.perf_counter()
     checkpoint = torch.load(args.model, map_location="cpu", weights_only=False)
-    columns = ["event_id", *CATEGORICAL_FEATURES, *NUMERIC_FEATURES]
+    preprocessor = checkpoint["preprocessor"]
+    columns = [
+        "event_id",
+        *preprocessor["categorical_features"],
+        *preprocessor["numeric_features"],
+    ]
     frame = pd.read_parquet(args.data, columns=columns)
-    categorical, numeric = transform_inputs(frame, checkpoint["preprocessor"])
+    categorical, numeric = transform_inputs(frame, preprocessor)
     placeholder_labels = np.zeros(len(frame), dtype=np.int64)
     loader = make_loader(
         categorical,

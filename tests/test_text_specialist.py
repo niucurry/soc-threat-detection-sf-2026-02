@@ -70,8 +70,17 @@ class TextSpecialistTests(unittest.TestCase):
             ]
         )
         np.testing.assert_array_equal(
-            strong_malicious_rules(messages),
+            strong_malicious_rules(messages, profile="expanded"),
             np.array([True, True, True, True, True, False, False, False]),
+        )
+
+    def test_rule_profiles_keep_version_specific_scope(self) -> None:
+        messages = pd.Series(["1,TRAFFIC,drop,1", "1,THREAT,url,block-url", "REJECT OK"])
+        np.testing.assert_array_equal(
+            strong_malicious_rules(messages, profile="basic"), [False, False, True]
+        )
+        np.testing.assert_array_equal(
+            strong_malicious_rules(messages, profile="expanded"), [True, True, True]
         )
 
     def test_best_threshold_separates_classes(self) -> None:

@@ -22,7 +22,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("artifacts/v3_generalization/audit.json"),
+        default=Path("artifacts/v2_2_generalization/audit.json"),
     )
     return parser.parse_args()
 
