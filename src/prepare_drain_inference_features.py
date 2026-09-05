@@ -4,13 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
-from prepare_v4_features import join_base_and_log_features, write_log_features
+from prepare_drain_features import join_base_and_log_features, write_log_features
 from soc_threat.log_semantics import GroupedDrainModel
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Enrich an unlabeled V1 feature parquet with frozen V4 templates"
+        description="Enrich v1.0 features with a frozen v1.1 grouped-Drain model"
     )
     parser.add_argument("--input", type=Path, required=True, help="Raw unlabeled parquet")
     parser.add_argument(

@@ -21,28 +21,26 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from soc_threat import LABELS  # noqa: E402
 from soc_threat.feature_schema import (  # noqa: E402
-    CATEGORICAL_FEATURES as V1_CATEGORICAL_FEATURES,
+    CATEGORICAL_FEATURES as TABULAR_CATEGORICAL_FEATURES,
 )
-from soc_threat.feature_schema import NUMERIC_FEATURES as V1_NUMERIC_FEATURES  # noqa: E402
+from soc_threat.feature_schema import NUMERIC_FEATURES as TABULAR_NUMERIC_FEATURES  # noqa: E402
 from soc_threat.metrics import evaluate_predictions  # noqa: E402
 
 
-# Backward-compatible aliases used by older imports and V1 checkpoints.
-CATEGORICAL_FEATURES = V1_CATEGORICAL_FEATURES
-NUMERIC_FEATURES = V1_NUMERIC_FEATURES
-
-
 def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
-    if name == "v1":
-        return list(V1_CATEGORICAL_FEATURES), list(V1_NUMERIC_FEATURES)
-    if name == "v4":
-        from soc_threat.v4_feature_schema import (
-            CATEGORICAL_FEATURES as V4_CATEGORICAL_FEATURES,
+    canonical = name
+    if canonical == "tabular":
+        return list(TABULAR_CATEGORICAL_FEATURES), list(TABULAR_NUMERIC_FEATURES)
+    if canonical == "drain":
+        from soc_threat.drain_feature_schema import (
+            CATEGORICAL_FEATURES as DRAIN_CATEGORICAL_FEATURES,
         )
-        from soc_threat.v4_feature_schema import NUMERIC_FEATURES as V4_NUMERIC_FEATURES
+        from soc_threat.drain_feature_schema import NUMERIC_FEATURES as DRAIN_NUMERIC_FEATURES
 
-        return list(V4_CATEGORICAL_FEATURES), list(V4_NUMERIC_FEATURES)
-    raise ValueError(f"Unknown feature set: {name}")
+        return list(DRAIN_CATEGORICAL_FEATURES), list(DRAIN_NUMERIC_FEATURES)
+    raise ValueError(
+        f"Unknown feature set: {name}; use tabular, drain, or structured"
+    )
 
 
 def seed_everything(seed: int) -> None:
@@ -96,8 +94,8 @@ def read_frame(
     categorical_features: list[str] | None = None,
     numeric_features: list[str] | None = None,
 ) -> pd.DataFrame:
-    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
-    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
+    categorical_features = categorical_features or list(TABULAR_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(TABULAR_NUMERIC_FEATURES)
     columns = ["event_id", "label_binary", *categorical_features, *numeric_features]
     frame = pd.read_parquet(path, columns=columns)
     return stratified_sample(frame, max_rows, seed)
@@ -108,8 +106,8 @@ def fit_preprocessor(
     categorical_features: list[str] | None = None,
     numeric_features: list[str] | None = None,
 ) -> dict[str, Any]:
-    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
-    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
+    categorical_features = categorical_features or list(TABULAR_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(TABULAR_NUMERIC_FEATURES)
     category_maps: dict[str, dict[str, int]] = {}
     cardinalities: list[int] = []
     for column in categorical_features:
@@ -263,29 +261,30 @@ def class_weights(labels: np.ndarray, power: float) -> np.ndarray:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Train the V1 PyTorch-NPU tabular model")
+    parser = argparse.ArgumentParser(description="Train a PyTorch-NPU tabular threat model")
     parser.add_argument(
         "--train",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v1_train.parquet",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0" / "tabular_train.parquet",
     )
     parser.add_argument(
         "--valid",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v1_valid.parquet",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0" / "tabular_valid.parquet",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v1_npu_tabular",
+        default=PROJECT_ROOT / "artifacts" / "v1_0_tabular",
     )
     parser.add_argument(
         "--feature-set",
-        choices=("v1", "v4"),
-        default="v1",
-        help="v1 structured baseline or v4 hybrid-parser/Drain features",
+        default="tabular",
+        choices=("tabular", "drain"),
+        help="tabular (v1.0), drain (v1.1), or structured (v1.2)",
     )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
+    parser.add_argument("--selection-metric", choices=("competition_score", "macro_f1"), default="competition_score")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=8192)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
@@ -356,7 +355,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
 
-    selection_metric = "competition_score"
+    selection_metric = args.selection_metric
     best_selection_score = -1.0
     best_epoch = -1
     best_state: dict[str, torch.Tensor] | None = None
@@ -450,14 +449,20 @@ def main() -> None:
         labels=LABELS,
         probabilities=probabilities,
     )
+    canonical_feature_set = args.feature_set
     metrics.update(
         {
-            "model": (
-                "v4_pytorch_npu_hybrid_drain"
-                if args.feature_set == "v4"
-                else "v1_pytorch_npu_structured"
-            ),
-            "feature_set": args.feature_set,
+            "model": {
+                "tabular": "v1.0_tabular_embedding_mlp",
+                "drain": "v1.1_tabular_mlp_with_grouped_drain",
+                "structured": "v1.2_tabular_mlp_with_structured_parser",
+            }[canonical_feature_set],
+            "model_version": {
+                "tabular": "v1.0",
+                "drain": "v1.1",
+                "structured": "v1.2",
+            }[canonical_feature_set],
+            "feature_set": canonical_feature_set,
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": selection_metric,
