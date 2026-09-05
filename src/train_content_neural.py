@@ -166,7 +166,7 @@ def empty_structured(rows: int) -> tuple[np.ndarray, np.ndarray]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train V6 content-only or structure/content fusion neural model"
+        description="Train v3.0 content-only or metadata/content fusion neural model"
     )
     parser.add_argument("--train", type=Path, required=True)
     parser.add_argument("--valid", type=Path, required=True)
@@ -430,7 +430,7 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v6_content_aware_neural",
+            "model": "v3.0_content_aware_neural",
             "mode": mode,
             "device": str(device),
             "best_epoch": best_epoch,
