@@ -151,7 +151,7 @@ def prepare_shards(
             print(
                 json.dumps(
                     {
-                        "stage": "prepare_v6_content_shards",
+                        "stage": "prepare_content_features_shards",
                         "input": raw_path.name,
                         "rows": processed,
                         "reused_rows": reused_rows,
@@ -250,18 +250,18 @@ def join_base_and_content(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare resumable V6 raw and field-aware content hashes"
+        description="Prepare resumable v3.0 raw and field-aware content hashes"
     )
     parser.add_argument("--data-dir", type=Path, required=True)
     parser.add_argument(
         "--base-feature-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v6",
+        default=PROJECT_ROOT / "data" / "processed" / "v3_0",
     )
     parser.add_argument("--batch-size", type=int, default=20_000)
     parser.add_argument("--progress-every", type=int, default=100_000)
@@ -272,7 +272,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--force",
         action="store_true",
-        help="Delete only V6 shards and joined files before rebuilding",
+        help="Delete only v3.0 content shards and joined files before rebuilding",
     )
     return parser.parse_args()
 
@@ -285,16 +285,16 @@ def main() -> None:
         )
     raw_train = args.data_dir / "train.parquet"
     raw_valid = args.data_dir / "valid_input.parquet"
-    base_train = args.base_feature_dir / "v1_train.parquet"
-    base_valid = args.base_feature_dir / "v1_valid.parquet"
+    base_train = args.base_feature_dir / "tabular_train.parquet"
+    base_valid = args.base_feature_dir / "tabular_valid.parquet"
     for path in (raw_train, raw_valid, base_train, base_valid):
         if not path.is_file():
             raise FileNotFoundError(path)
 
     train_shards = args.output_dir / "train_content_shards"
     valid_shards = args.output_dir / "valid_content_shards"
-    train_output = args.output_dir / "v6_train.parquet"
-    valid_output = args.output_dir / "v6_valid.parquet"
+    train_output = args.output_dir / "content_train.parquet"
+    valid_output = args.output_dir / "content_valid.parquet"
     if args.force:
         for directory in (train_shards, valid_shards):
             if directory.exists():
@@ -340,7 +340,7 @@ def main() -> None:
         ),
     ]
     summary = {
-        "version": "v6.0",
+        "model_version": "v3.0",
         "method": "fixed-hash word/bigram/character content encoding without template IDs",
         "hash_buckets": args.hash_buckets,
         "max_tokens": args.max_tokens,
@@ -353,7 +353,7 @@ def main() -> None:
         ),
     }
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    (args.output_dir / "v6_manifest.json").write_text(
+    (args.output_dir / "content_manifest.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)

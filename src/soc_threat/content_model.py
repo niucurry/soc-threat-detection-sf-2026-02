@@ -56,6 +56,61 @@ class ContentEncoder(nn.Module):
         return self.network(torch.cat([mean_pool, max_pool], dim=1))
 
 
+class MultiViewContentEncoder(nn.Module):
+    """Encode fixed head/middle/tail/key-value views with shared token weights."""
+
+    def __init__(
+        self,
+        *,
+        hash_buckets: int,
+        embedding_dim: int,
+        output_dim: int,
+        token_dropout: float,
+        view_count: int,
+        tokens_per_view: int,
+    ) -> None:
+        super().__init__()
+        if view_count < 2 or tokens_per_view < 1:
+            raise ValueError("Multi-view dimensions must be positive")
+        self.view_count = view_count
+        self.tokens_per_view = tokens_per_view
+        self.shared_encoder = ContentEncoder(
+            hash_buckets=hash_buckets,
+            embedding_dim=embedding_dim,
+            output_dim=output_dim,
+            token_dropout=token_dropout,
+        )
+        self.view_embeddings = nn.Parameter(torch.zeros(view_count, output_dim))
+        nn.init.normal_(self.view_embeddings, mean=0.0, std=0.02)
+        self.fusion = nn.Sequential(
+            nn.Linear(view_count * output_dim, output_dim * 2),
+            nn.LayerNorm(output_dim * 2),
+            nn.SiLU(),
+            nn.Dropout(0.15),
+            nn.Linear(output_dim * 2, output_dim),
+            nn.LayerNorm(output_dim),
+            nn.SiLU(),
+        )
+
+    def forward(self, token_ids: torch.Tensor) -> torch.Tensor:
+        if token_ids.ndim != 2:
+            raise ValueError("Multi-view tokens must have shape [batch, flattened_tokens]")
+        expected_width = self.view_count * self.tokens_per_view
+        if token_ids.shape[1] != expected_width:
+            raise ValueError(
+                f"Expected {expected_width} multi-view tokens, got {token_ids.shape[1]}"
+            )
+        batch_size = token_ids.shape[0]
+        views = token_ids.reshape(
+            batch_size * self.view_count, self.tokens_per_view
+        )
+        encoded = self.shared_encoder(views).reshape(
+            batch_size, self.view_count, -1
+        )
+        encoded = encoded + self.view_embeddings.unsqueeze(0)
+        return self.fusion(encoded.flatten(start_dim=1))
+
+
 class StructuredEncoder(nn.Module):
     def __init__(
         self,

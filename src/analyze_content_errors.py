@@ -13,12 +13,12 @@ def sql_path(path: Path) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit one V6 content-model run")
+    parser = argparse.ArgumentParser(description="Audit one v3.0 content-model run")
     parser.add_argument("--predictions", type=Path, required=True)
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--v4-predictions", type=Path)
-    parser.add_argument("--v5-predictions", type=Path)
+    parser.add_argument("--drain-predictions", type=Path)
+    parser.add_argument("--structured-predictions", type=Path)
     parser.add_argument("--top-k", type=int, default=30)
     return parser.parse_args()
 
@@ -94,7 +94,7 @@ def compare_predictions(
 def main() -> None:
     args = parse_args()
     required = [args.predictions, args.features]
-    for optional in (args.v4_predictions, args.v5_predictions):
+    for optional in (args.drain_predictions, args.structured_predictions):
         if optional is not None:
             required.append(optional)
     for path in required:
@@ -121,7 +121,7 @@ def main() -> None:
         """
     ).fetchone()
     if counts[0] != counts[1]:
-        raise ValueError("Duplicate event_id values in V6 audit join")
+        raise ValueError("Duplicate event_id values in v3.0 audit join")
 
     error_csv = args.output_dir / "error_rows.csv"
     connection.execute(
@@ -186,13 +186,13 @@ def main() -> None:
             args.top_k,
         ),
     }
-    if args.v4_predictions is not None:
-        summary["v4_comparison"] = compare_predictions(
-            connection, args.v4_predictions, args.predictions
+    if args.drain_predictions is not None:
+        summary["v1.1_drain_comparison"] = compare_predictions(
+            connection, args.drain_predictions, args.predictions
         )
-    if args.v5_predictions is not None:
-        summary["v5_comparison"] = compare_predictions(
-            connection, args.v5_predictions, args.predictions
+    if args.structured_predictions is not None:
+        summary["v1.2_structured_comparison"] = compare_predictions(
+            connection, args.structured_predictions, args.predictions
         )
     connection.close()
     summary_path = args.output_dir / "error_summary.json"
