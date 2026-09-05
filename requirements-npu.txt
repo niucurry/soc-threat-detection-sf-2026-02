@@ -1,8 +1,0 @@
-# PyTorch and torch_npu are supplied by the competition image.
-# Do not reinstall them here because their versions must match the Ascend driver.
-duckdb==1.3.2
-joblib>=1.3,<2
-numpy>=1.26,<2
-pandas>=2.1,<3
-pyarrow>=16,<20
-scikit-learn>=1.4,<2
