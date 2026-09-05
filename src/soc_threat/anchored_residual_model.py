@@ -50,14 +50,14 @@ class AnchoredResidualOutput:
 
 
 class AnchoredConflictResidualModel(nn.Module):
-    """A frozen V7 model with a narrowly scoped, exactly-zero residual.
+    """A frozen v4.0 anchor with a narrowly scoped, exactly-zero residual.
 
     The residual is allowed to act only when the frozen final threat head says
     benign while one configured evidence branch says threat. Its maximum
     positive correction is the detached logit gap between those two branches.
-    V9 uses metadata evidence; V10 uses content evidence. At initialization the
-    residual output is exactly zero, so predictions and probabilities are
-    exactly those of the anchor.
+    v5.0 uses metadata evidence; v5.1/v5.2 use content evidence. At
+    initialization the residual output is exactly zero, so predictions and
+    probabilities are exactly those of the anchor.
     """
 
     def __init__(
@@ -81,7 +81,7 @@ class AnchoredConflictResidualModel(nn.Module):
         if evidence_source not in {"metadata", "content"}:
             raise ValueError(f"Unknown evidence source: {evidence_source}")
         if anchor.content_input_mode != "raw":
-            raise ValueError("The frozen anchor must use V7 raw-token content")
+            raise ValueError("The frozen v4.0 anchor must use raw-token content")
         if max_conflict_gap <= 0:
             raise ValueError("max_conflict_gap must be positive")
 
@@ -103,18 +103,18 @@ class AnchoredConflictResidualModel(nn.Module):
                 view_count=content_view_count,
                 tokens_per_view=content_tokens_per_view,
             )
-            # Reuse the token semantics learned by V7.  Only the view fusion is
-            # new; this avoids the from-scratch representation reset seen in A1.
+            # Initialize from v4.0 token semantics. Both this copied encoder and
+            # the view-fusion layer remain trainable; the anchor itself is frozen.
             self.multiview_encoder.shared_encoder.load_state_dict(
                 self.anchor.content_encoder.state_dict()
             )
         else:
             self.multiview_encoder = None
 
-        # Frozen V7 vectors: metadata=128, semantic=64, raw content=output_dim.
+        # Frozen v4.0 vectors: metadata=128, semantic=64, raw content=output_dim.
         # Four scalars describe metadata/content confidence and novelty.  The
         # final anchor margin is deliberately excluded from the trust input:
-        # otherwise an in-sample trust classifier can merely copy V7 instead
+        # otherwise an in-sample trust classifier can merely copy the anchor instead
         # of learning when the configured evidence branch is reliable.
         input_dim = 128 + 64 + content_output_dim + 4
         if self.multiview_encoder is not None:

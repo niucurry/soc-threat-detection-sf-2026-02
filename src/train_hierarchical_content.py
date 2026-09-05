@@ -356,7 +356,9 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--positive-threat-margin", type=float, default=0.0)
     parser.add_argument("--allowed-branch-logit-gap", type=float, default=0.5)
-    parser.add_argument("--experiment-version", choices=("v7", "v8"), default="v7")
+    parser.add_argument(
+        "--experiment-version", choices=("v4.0", "v4.1"), default="v4.0"
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=2048)

@@ -228,7 +228,7 @@ def find_reliability_indices(
     # evidence branch votes threat. The in-sample auxiliary branch can have
     # zero false positives, so add benign rows with the highest evidence
     # margins as hard negatives. This teaches distrust without validation
-    # labels and works for both V9 metadata and V10 content evidence.
+    # labels and works for both v5.0 metadata and v5.1/v5.2 content evidence.
     positive = np.flatnonzero((labels != 0) & (margins > 0)).astype(
         np.int64, copy=False
     )
@@ -467,7 +467,7 @@ def is_better(candidate: dict[str, Any], incumbent: dict[str, Any]) -> bool:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train a zero-initialized conflict resolver anchored to V7"
+        description="Train a zero-initialized conflict resolver anchored to v4.0"
     )
     parser.add_argument("--train", type=Path, required=True)
     parser.add_argument("--valid", type=Path, required=True)
@@ -479,11 +479,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--evidence-source",
         choices=("metadata", "content"),
-        default="metadata",
+        default="content",
         help="Frozen branch whose positive vote can rescue an anchor-benign row",
     )
     parser.add_argument(
-        "--experiment-version", choices=("v9", "v10"), default="v9"
+        "--experiment-version", choices=("v5.1",), default="v5.1"
     )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--epochs", type=int, default=8)
@@ -597,7 +597,7 @@ def main() -> None:
     )
     if len(candidate_indices) == 0:
         raise ValueError(
-            f"The frozen V7 {evidence_source} branch produced no threat candidates"
+            f"The frozen v4.0 {evidence_source} branch produced no threat candidates"
         )
     candidate_dataset = Subset(train_dataset, candidate_indices.tolist())
     train_loader = make_loader(
@@ -636,7 +636,7 @@ def main() -> None:
             "errors": error_count(best_metrics),
             "multiclass_log_loss": best_metrics["multiclass_log_loss"],
             "residual_audit": best_metrics["residual_audit"],
-            "note": "exact frozen V7 anchor before residual training",
+            "note": "exact frozen v4.0 anchor before residual training",
         }
     ]
     print(
@@ -775,7 +775,7 @@ def main() -> None:
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": "competition_score_then_errors_then_log_loss",
-            "epoch_zero_is_exact_v7_anchor": True,
+            "epoch_zero_is_exact_anchor": True,
             "train_rows": len(train_dataset),
             "train_reliability_rows": len(candidate_indices),
             "train_reliability_label_counts": {

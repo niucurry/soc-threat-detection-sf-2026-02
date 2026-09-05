@@ -11,7 +11,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_content_audit_supports_predictions_written_before_v10(
+def test_content_audit_supports_metadata_predictions_without_content_candidate(
     tmp_path: Path,
 ) -> None:
     predictions = tmp_path / "predictions.parquet"
@@ -28,7 +28,7 @@ def test_content_audit_supports_predictions_written_before_v10(
             "content_threat_probability": [0.95, 0.91],
             "threat_probability": [0.7, 0.2],
             "conflict_candidate": [1, 1],
-            # V9 files have this column but predate the content-candidate column.
+            # Metadata-only predictions have no content candidate column.
             "metadata_reliability_candidate": [0, 0],
             "trust_score": [0.0, 0.0],
             "delta_margin": [0.0, 0.0],
@@ -50,7 +50,7 @@ def test_content_audit_supports_predictions_written_before_v10(
     subprocess.run(
         [
             sys.executable,
-            str(PROJECT_ROOT / "src" / "analyze_v9_residual.py"),
+            str(PROJECT_ROOT / "src" / "analyze_anchored_residual.py"),
             "--predictions",
             str(predictions),
             "--features",
