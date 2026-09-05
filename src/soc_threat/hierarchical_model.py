@@ -6,10 +6,15 @@ from typing import Literal
 import torch
 from torch import nn
 
-from soc_threat.content_model import ContentEncoder, embedding_dimension
+from soc_threat.content_model import (
+    ContentEncoder,
+    MultiViewContentEncoder,
+    embedding_dimension,
+)
 
 
 NoveltyGateMode = Literal["none", "count"]
+ContentInputMode = Literal["raw", "multiview"]
 
 
 @dataclass(frozen=True)
@@ -84,11 +89,17 @@ class HierarchicalContentModel(nn.Module):
         semantic_numeric_count: int,
         token_dropout: float,
         category_dropout: float,
+        content_input_mode: ContentInputMode = "raw",
+        content_view_count: int = 4,
+        content_tokens_per_view: int = 64,
     ) -> None:
         super().__init__()
         if novelty_gate_mode not in {"none", "count"}:
             raise ValueError(f"Unknown novelty gate mode: {novelty_gate_mode}")
+        if content_input_mode not in {"raw", "multiview"}:
+            raise ValueError(f"Unknown content input mode: {content_input_mode}")
         self.novelty_gate_mode = novelty_gate_mode
+        self.content_input_mode = content_input_mode
         self.metadata_encoder = CategoricalNumericEncoder(
             metadata_cardinalities,
             metadata_numeric_count,
@@ -103,12 +114,22 @@ class HierarchicalContentModel(nn.Module):
             output_dim=64,
             category_dropout=category_dropout,
         )
-        self.content_encoder = ContentEncoder(
-            hash_buckets=hash_buckets,
-            embedding_dim=content_embedding_dim,
-            output_dim=content_output_dim,
-            token_dropout=token_dropout,
-        )
+        if content_input_mode == "raw":
+            self.content_encoder = ContentEncoder(
+                hash_buckets=hash_buckets,
+                embedding_dim=content_embedding_dim,
+                output_dim=content_output_dim,
+                token_dropout=token_dropout,
+            )
+        else:
+            self.content_encoder = MultiViewContentEncoder(
+                hash_buckets=hash_buckets,
+                embedding_dim=content_embedding_dim,
+                output_dim=content_output_dim,
+                token_dropout=token_dropout,
+                view_count=content_view_count,
+                tokens_per_view=content_tokens_per_view,
+            )
 
         combined_dim = 128 + 64 + content_output_dim
         self.threat_head = nn.Sequential(

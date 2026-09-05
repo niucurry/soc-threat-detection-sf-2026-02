@@ -29,6 +29,7 @@ from soc_threat.hierarchical_features import (  # noqa: E402
     transform_hierarchical_inputs,
 )
 from soc_threat.hierarchical_model import (  # noqa: E402
+    ContentInputMode,
     HierarchicalContentModel,
     NoveltyGateMode,
 )
@@ -50,13 +51,14 @@ def seed_everything(seed: int) -> None:
 def read_data(
     path: Path,
     *,
+    token_column: str,
     max_rows: int | None,
     seed: int,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     columns = [
         "event_id",
         "label_binary",
-        "raw_token_ids",
+        token_column,
         *HIERARCHICAL_REQUIRED_COLUMNS,
     ]
     columns = list(dict.fromkeys(columns))
@@ -65,8 +67,8 @@ def read_data(
     indices = stratified_indices(labels, max_rows, seed)
     if len(indices) != len(table):
         table = table.take(pa.array(indices))
-    tokens = fixed_list_to_numpy(table["raw_token_ids"])
-    frame = table.drop(["raw_token_ids"]).to_pandas()
+    tokens = fixed_list_to_numpy(table[token_column])
+    frame = table.drop([token_column]).to_pandas()
     return frame, tokens
 
 
@@ -154,6 +156,35 @@ def masked_cross_entropy(
 ) -> torch.Tensor:
     losses = F.cross_entropy(logits, targets, weight=weights, reduction="none")
     float_mask = mask.to(losses.dtype)
+    return (losses * float_mask).sum() / float_mask.sum().clamp_min(1.0)
+
+
+def positive_evidence_preservation_loss(
+    final_logits: torch.Tensor,
+    metadata_logits: torch.Tensor,
+    content_logits: torch.Tensor,
+    threat_targets: torch.Tensor,
+    *,
+    positive_margin: float,
+    allowed_branch_gap: float,
+) -> torch.Tensor:
+    """Keep the fused positive logit from erasing a useful branch on threats.
+
+    Auxiliary branch logits are detached so this term cannot obtain a low loss by
+    weakening the branch evidence that it is intended to preserve.
+    """
+
+    positive_mask = threat_targets == 1
+    final_margin = final_logits[:, 1] - final_logits[:, 0]
+    metadata_margin = metadata_logits[:, 1] - metadata_logits[:, 0]
+    content_margin = content_logits[:, 1] - content_logits[:, 0]
+    strongest_branch = torch.maximum(metadata_margin, content_margin).detach()
+    floor = torch.full_like(strongest_branch, float(positive_margin))
+    target_margin = torch.maximum(
+        floor, strongest_branch - float(allowed_branch_gap)
+    )
+    losses = F.relu(target_margin - final_margin)
+    float_mask = positive_mask.to(losses.dtype)
     return (losses * float_mask).sum() / float_mask.sum().clamp_min(1.0)
 
 
@@ -314,6 +345,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--valid", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--novelty-gate", choices=("none", "count"), required=True)
+    parser.add_argument(
+        "--content-input", choices=("raw", "multiview"), default="raw"
+    )
+    parser.add_argument("--token-column")
+    parser.add_argument("--content-view-count", type=int, default=4)
+    parser.add_argument("--content-tokens-per-view", type=int, default=64)
+    parser.add_argument(
+        "--evidence-preservation-weight", type=float, default=0.0
+    )
+    parser.add_argument("--positive-threat-margin", type=float, default=0.0)
+    parser.add_argument("--allowed-branch-logit-gap", type=float, default=0.5)
+    parser.add_argument(
+        "--experiment-version", choices=("v4.0", "v4.1"), default="v4.0"
+    )
     parser.add_argument("--device", default="auto")
     parser.add_argument("--epochs", type=int, default=10)
     parser.add_argument("--batch-size", type=int, default=2048)
@@ -348,20 +393,44 @@ def main() -> None:
             raise FileNotFoundError(path)
     if not 0.0 < args.threat_threshold < 1.0:
         raise ValueError("threat threshold must be between zero and one")
+    if args.evidence_preservation_weight < 0 or args.allowed_branch_logit_gap < 0:
+        raise ValueError("Evidence preservation weights and gaps must be non-negative")
     seed_everything(args.seed)
     args.output_dir.mkdir(parents=True, exist_ok=True)
     device = choose_device(args.device)
     gate_mode: NoveltyGateMode = args.novelty_gate
+    content_input_mode: ContentInputMode = args.content_input
+    token_column = args.token_column or (
+        "multiview_token_ids"
+        if content_input_mode == "multiview"
+        else "raw_token_ids"
+    )
 
     data_started = time.perf_counter()
     train_frame, train_tokens = read_data(
-        args.train, max_rows=args.max_train_rows, seed=args.seed
+        args.train,
+        token_column=token_column,
+        max_rows=args.max_train_rows,
+        seed=args.seed,
     )
     valid_frame, valid_tokens = read_data(
-        args.valid, max_rows=args.max_valid_rows, seed=args.seed + 100
+        args.valid,
+        token_column=token_column,
+        max_rows=args.max_valid_rows,
+        seed=args.seed + 100,
     )
     if int(train_tokens.max(initial=0)) >= args.hash_buckets:
         raise ValueError("Prepared token ID exceeds --hash-buckets")
+    if content_input_mode == "multiview":
+        expected_width = args.content_view_count * args.content_tokens_per_view
+        if (
+            train_tokens.shape[1] != expected_width
+            or valid_tokens.shape[1] != expected_width
+        ):
+            raise ValueError(
+                f"Expected {expected_width} multi-view tokens, "
+                f"got train={train_tokens.shape[1]}, valid={valid_tokens.shape[1]}"
+            )
     preprocessor = fit_hierarchical_preprocessor(
         train_frame, novelty_pseudocount=args.novelty_pseudocount
     )
@@ -398,6 +467,9 @@ def main() -> None:
         semantic_numeric_count=len(preprocessor["semantic"]["numeric_features"]),
         token_dropout=args.token_dropout,
         category_dropout=args.category_dropout,
+        content_input_mode=content_input_mode,
+        content_view_count=args.content_view_count,
+        content_tokens_per_view=args.content_tokens_per_view,
     ).to(device)
 
     train_threat = (train_y != 0).astype(np.int64)
@@ -417,6 +489,9 @@ def main() -> None:
             {
                 "device": str(device),
                 "novelty_gate": gate_mode,
+                "content_input": content_input_mode,
+                "token_column": token_column,
+                "evidence_preservation_weight": args.evidence_preservation_weight,
                 "train_rows": len(train_frame),
                 "valid_rows": len(valid_frame),
                 "train_combo_count": len(preprocessor["combo_counts"]),
@@ -452,6 +527,7 @@ def main() -> None:
             "metadata_threat": 0.0,
             "content_threat": 0.0,
             "metadata_subtype": 0.0,
+            "evidence_preservation": 0.0,
         }
         trained_rows = 0
         for batch in train_loader:
@@ -503,12 +579,21 @@ def main() -> None:
                 threat_mask,
                 subtype_weight_tensor,
             )
+            evidence_preservation_loss = positive_evidence_preservation_loss(
+                output.threat_logits,
+                output.metadata_threat_logits,
+                output.content_threat_logits,
+                threat_targets,
+                positive_margin=args.positive_threat_margin,
+                allowed_branch_gap=args.allowed_branch_logit_gap,
+            )
             loss = (
                 threat_loss
                 + args.subtype_loss_weight * subtype_loss
                 + args.metadata_threat_aux_weight * metadata_threat_loss
                 + args.content_threat_aux_weight * content_threat_loss
                 + args.metadata_subtype_aux_weight * metadata_subtype_loss
+                + args.evidence_preservation_weight * evidence_preservation_loss
             )
             loss.backward()
             nn.utils.clip_grad_norm_(model.parameters(), max_norm=5.0)
@@ -523,6 +608,7 @@ def main() -> None:
                 ("metadata_threat", metadata_threat_loss),
                 ("content_threat", content_threat_loss),
                 ("metadata_subtype", metadata_subtype_loss),
+                ("evidence_preservation", evidence_preservation_loss),
             ):
                 loss_sums[name] += float(value.detach().cpu()) * rows
 
@@ -588,8 +674,11 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v7_hierarchical_content_neural",
-            "mode": f"hierarchical_{gate_mode}",
+            "model": f"{args.experiment_version}_hierarchical_content_neural",
+            "mode": (
+                f"hierarchical_{content_input_mode}_{gate_mode}_"
+                f"evidence_{args.evidence_preservation_weight:g}"
+            ),
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": "competition_score",
@@ -612,6 +701,7 @@ def main() -> None:
                 "train": str(args.train),
                 "valid": str(args.valid),
                 "output_dir": str(args.output_dir),
+                "resolved_token_column": token_column,
             },
         }
     )
@@ -629,6 +719,9 @@ def main() -> None:
             "semantic_numeric_count": len(preprocessor["semantic"]["numeric_features"]),
             "token_dropout": 0.0,
             "category_dropout": 0.0,
+            "content_input_mode": content_input_mode,
+            "content_view_count": args.content_view_count,
+            "content_tokens_per_view": args.content_tokens_per_view,
         },
         "threat_threshold": args.threat_threshold,
         "preprocessor": preprocessor,

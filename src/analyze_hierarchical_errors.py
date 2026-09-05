@@ -13,13 +13,14 @@ def sql_path(path: Path) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Audit one V7 hierarchical run")
+    parser = argparse.ArgumentParser(description="Audit one v4 hierarchical run")
     parser.add_argument("--predictions", type=Path, required=True)
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--v4-predictions", type=Path)
-    parser.add_argument("--v5-predictions", type=Path)
-    parser.add_argument("--v6-predictions", type=Path)
+    parser.add_argument("--drain-predictions", type=Path)
+    parser.add_argument("--structured-predictions", type=Path)
+    parser.add_argument("--content-predictions", type=Path)
+    parser.add_argument("--hierarchical-predictions", type=Path)
     parser.add_argument("--top-k", type=int, default=40)
     return parser.parse_args()
 
@@ -94,9 +95,10 @@ def main() -> None:
     args = parse_args()
     required = [args.predictions, args.features]
     optional = {
-        "v4_comparison": args.v4_predictions,
-        "v5_comparison": args.v5_predictions,
-        "v6_e2_comparison": args.v6_predictions,
+        "v1.1_drain_comparison": args.drain_predictions,
+        "v1.2_structured_comparison": args.structured_predictions,
+        "v3.0_exp02_comparison": args.content_predictions,
+        "v4.0_exp02_comparison": args.hierarchical_predictions,
     }
     required.extend(path for path in optional.values() if path is not None)
     for path in required:
@@ -152,7 +154,7 @@ def main() -> None:
         """
     ).fetchone()
     if counts[0] != counts[1]:
-        raise ValueError("Duplicate event_id values in V7 audit join")
+        raise ValueError("Duplicate event_id values in v4 audit join")
 
     error_csv = args.output_dir / "error_rows.csv"
     connection.execute(

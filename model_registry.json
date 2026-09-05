@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "current_version": "v4.0",
+  "current_default_experiment": "v4.0-exp01",
+  "current_branch": "release/v4.0-hierarchical",
+  "naming": {
+    "model_version": "vMAJOR.MINOR",
+    "experiment": "vMAJOR.MINOR-expNN-short-name",
+    "epoch_checkpoint": "vMAJOR.MINOR-expNN-epNN",
+    "seed_run": "vMAJOR.MINOR-expNN-seedNN",
+    "rule": "Change MAJOR only when the model family changes; change MINOR for a material method change within a family; use exp/ep/seed suffixes for comparisons, checkpoints and random repeats."
+  },
+  "versions": [
+    {
+      "version": "v4.0",
+      "family": "hierarchical-threat-subtype",
+      "name": "威胁与子类型分层神经网络",
+      "status": "frozen-anchor",
+      "runner": "scripts/run_cloud_v4_0_hierarchical.sh",
+      "seed_runner": "scripts/run_cloud_v4_0_seed_sweep.sh",
+      "official_results": [
+        {
+          "experiment": "v4.0-exp01-no-novelty",
+          "competition_score": 0.9993140394289346,
+          "macro_f1": 0.999527322822607,
+          "errors": 46,
+          "best_epoch": 1
+        },
+        {
+          "experiment": "v4.0-exp02-novelty",
+          "competition_score": 0.9993140394289346,
+          "macro_f1": 0.999527322822607,
+          "errors": 46,
+          "best_epoch": 1,
+          "checkpoint_available": false
+        },
+        {
+          "experiment": "v4.0-exp02-seed20260829",
+          "competition_score": 0.9993387401713992,
+          "errors": 57,
+          "threat_false_positive": 1,
+          "threat_false_negative": 32,
+          "subtype_confusion": 24,
+          "checkpoint_available": true
+        }
+      ],
+      "branch": "release/v4.0-hierarchical",
+      "validation_rows": 2014052,
+      "readme": "README.md"
+    }
+  ]
+}
