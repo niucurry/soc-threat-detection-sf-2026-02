@@ -26,7 +26,7 @@ def sql_path(path: Path) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Replace V1 predictions with V2 specialist decisions"
+        description="Fuse v1.0 tabular predictions with the v2.x text specialist"
     )
     parser.add_argument("--base-predictions", type=Path, required=True)
     parser.add_argument("--specialist-predictions", type=Path, required=True)
@@ -178,7 +178,8 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v2_hybrid_structured_text_rules",
+            "model": "v2.0_hybrid_structured_text_semantic_rules",
+            "model_version": "v2.0",
             "base_predictions": str(args.base_predictions.resolve()),
             "specialist_predictions": str(
                 args.specialist_predictions.resolve()

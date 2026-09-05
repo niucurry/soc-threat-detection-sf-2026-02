@@ -24,7 +24,7 @@ def sql_path(path: Path) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the V2 text specialist on its routed raw test rows"
+        description="Run the text specialist on its routed raw input rows"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--input", type=Path, required=True)
@@ -59,7 +59,7 @@ def main() -> None:
     malicious_index = list(classifier.classes_).index("malicious")
     raw_probabilities = classifier.predict_proba(matrix)[:, malicious_index]
     malicious_probabilities, strong_rules = force_rule_probabilities(
-        raw_probabilities, text
+        raw_probabilities, text, profile=package["rules_profile"]
     )
     predicted = np.where(
         malicious_probabilities >= float(package["threshold"]),
