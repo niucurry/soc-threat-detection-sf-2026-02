@@ -14,12 +14,12 @@ def sql_path(path: Path) -> str:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Export V5.1 neural-base errors and optional V4/V5 comparison"
+        description="Export v1.2 structured-model errors and optional v1.1 comparison"
     )
     parser.add_argument("--predictions", type=Path, required=True)
     parser.add_argument("--features", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
-    parser.add_argument("--v4-predictions", type=Path)
+    parser.add_argument("--drain-predictions", type=Path)
     parser.add_argument("--top-k", type=int, default=30)
     return parser.parse_args()
 
@@ -35,7 +35,7 @@ def grouped_errors(
     rows = connection.execute(
         f"""
         SELECT {selected}, COUNT(*) AS errors
-        FROM v5_joined
+        FROM structured_joined
         WHERE true_label <> pred_label
         GROUP BY {grouped}
         ORDER BY errors DESC, {grouped}
@@ -55,8 +55,8 @@ def grouped_errors(
 def main() -> None:
     args = parse_args()
     required = [args.predictions, args.features]
-    if args.v4_predictions is not None:
-        required.append(args.v4_predictions)
+    if args.drain_predictions is not None:
+        required.append(args.drain_predictions)
     for path in required:
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -67,7 +67,7 @@ def main() -> None:
     connection = duckdb.connect()
     connection.execute(
         f"""
-        CREATE TEMP VIEW v5_joined AS
+        CREATE TEMP VIEW structured_joined AS
         SELECT p.*, f.* EXCLUDE (event_id, label_binary)
         FROM read_parquet('{sql_path(args.predictions)}') AS p
         INNER JOIN read_parquet('{sql_path(args.features)}') AS f USING (event_id)
@@ -79,7 +79,7 @@ def main() -> None:
             COUNT(*) AS rows,
             COUNT(DISTINCT event_id) AS distinct_ids,
             SUM(CASE WHEN true_label <> pred_label THEN 1 ELSE 0 END) AS errors
-        FROM v5_joined
+        FROM structured_joined
         """
     ).fetchone()
     if counts[0] != counts[1]:
@@ -109,16 +109,16 @@ def main() -> None:
                 schema_seen_train,
                 semantic_template_id,
                 semantic_template_seen_train,
-                event_category_v5,
-                event_type_v5,
-                event_action_v5,
-                event_outcome_v5,
-                event_reason_v5,
+                event_category,
+                event_type,
+                event_action,
+                event_outcome,
+                event_reason,
                 authentication_factor,
-                service_name_v5,
-                application_name_v5,
-                rule_name_v5,
-                threat_category_v5,
+                service_name,
+                application_name,
+                rule_name,
+                threat_category,
                 network_protocol,
                 event_code,
                 dst_port_bucket,
@@ -126,7 +126,7 @@ def main() -> None:
                 event_severity_number,
                 malware_present,
                 authentication_present
-            FROM v5_joined
+            FROM structured_joined
             WHERE true_label <> pred_label
             ORDER BY true_label, pred_label, event_id
         ) TO '{sql_path(error_csv)}' (HEADER, DELIMITER ',')
@@ -158,8 +158,8 @@ def main() -> None:
             columns=(
                 "true_label",
                 "pred_label",
-                "event_category_v5",
-                "event_action_v5",
+                "event_category",
+                "event_action",
                 "event_code",
             ),
             top_k=args.top_k,
@@ -177,17 +177,17 @@ def main() -> None:
         ),
     }
 
-    if args.v4_predictions is not None:
+    if args.drain_predictions is not None:
         connection.execute(
             f"""
             CREATE TEMP VIEW version_comparison AS
             SELECT
-                v4.event_id,
-                v4.true_label,
-                v4.pred_label AS v4_pred_label,
-                v5.pred_label AS v5_pred_label
-            FROM read_parquet('{sql_path(args.v4_predictions)}') AS v4
-            INNER JOIN read_parquet('{sql_path(args.predictions)}') AS v5
+                drain.event_id,
+                drain.true_label,
+                drain.pred_label AS drain_pred_label,
+                structured.pred_label AS structured_pred_label
+            FROM read_parquet('{sql_path(args.drain_predictions)}') AS drain
+            INNER JOIN read_parquet('{sql_path(args.predictions)}') AS structured
                 USING (event_id)
             """
         )
@@ -195,28 +195,28 @@ def main() -> None:
             """
             SELECT
                 COUNT(*) AS rows,
-                SUM(v4_pred_label <> true_label) AS v4_errors,
-                SUM(v5_pred_label <> true_label) AS v5_errors,
-                SUM(v4_pred_label <> true_label AND v5_pred_label = true_label)
-                    AS v4_wrong_v5_correct,
-                SUM(v4_pred_label = true_label AND v5_pred_label <> true_label)
-                    AS v4_correct_v5_wrong,
-                SUM(v4_pred_label <> true_label AND v5_pred_label <> true_label)
+                SUM(drain_pred_label <> true_label) AS drain_errors,
+                SUM(structured_pred_label <> true_label) AS structured_errors,
+                SUM(drain_pred_label <> true_label AND structured_pred_label = true_label)
+                    AS drain_wrong_structured_correct,
+                SUM(drain_pred_label = true_label AND structured_pred_label <> true_label)
+                    AS drain_correct_structured_wrong,
+                SUM(drain_pred_label <> true_label AND structured_pred_label <> true_label)
                     AS both_wrong,
-                SUM(v4_pred_label <> v5_pred_label) AS changed_predictions
+                SUM(drain_pred_label <> structured_pred_label) AS changed_predictions
             FROM version_comparison
             """
         ).fetchone()
         comparison_summary = {
             "rows": int(comparison[0]),
-            "v4_errors": int(comparison[1] or 0),
-            "v5_errors": int(comparison[2] or 0),
-            "v4_wrong_v5_correct": int(comparison[3] or 0),
-            "v4_correct_v5_wrong": int(comparison[4] or 0),
+            "drain_errors": int(comparison[1] or 0),
+            "structured_errors": int(comparison[2] or 0),
+            "drain_wrong_structured_correct": int(comparison[3] or 0),
+            "drain_correct_structured_wrong": int(comparison[4] or 0),
             "both_wrong": int(comparison[5] or 0),
             "changed_predictions": int(comparison[6] or 0),
         }
-        summary["v4_v5_comparison"] = comparison_summary
+        summary["drain_structured_comparison"] = comparison_summary
 
     connection.close()
     summary_path = args.output_dir / "error_summary.json"

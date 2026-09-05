@@ -4,13 +4,13 @@ import argparse
 import json
 from pathlib import Path
 
-from prepare_v4_features import join_base_and_log_features, write_log_features
-from soc_threat.v5_structured_semantics import V5GroupedDrainModel
+from prepare_drain_features import join_base_and_log_features, write_log_features
+from soc_threat.structured_semantics import StructuredDrainModel
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Enrich an unlabeled V1 feature parquet with frozen V5.1 features"
+        description="Enrich v1.0 features with a frozen v1.2 structured parser"
     )
     parser.add_argument(
         "--input", type=Path, required=True, help="Raw unlabeled parquet"
@@ -36,7 +36,7 @@ def main() -> None:
     for path in (args.input, args.base_features, args.model_dir / "manifest.json"):
         if not path.exists():
             raise FileNotFoundError(path)
-    model = V5GroupedDrainModel.load(args.model_dir)
+    model = StructuredDrainModel.load(args.model_dir)
     log_features = args.log_features or args.output.with_name(
         args.output.stem + "_log_features.parquet"
     )
@@ -58,7 +58,7 @@ def main() -> None:
     print(
         json.dumps(
             {
-                "version": "v5.1",
+                "model_version": "v1.2",
                 "log_features": log_summary,
                 "joined_features": joined_summary,
                 "template_model": str(args.model_dir),

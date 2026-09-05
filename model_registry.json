@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "current_version": "v1.2",
+  "current_default_experiment": "v1.2-exp01",
+  "current_branch": "experiment/v1.2-structured",
+  "naming": {
+    "model_version": "vMAJOR.MINOR",
+    "experiment": "vMAJOR.MINOR-expNN-short-name",
+    "epoch_checkpoint": "vMAJOR.MINOR-expNN-epNN",
+    "seed_run": "vMAJOR.MINOR-expNN-seedNN",
+    "rule": "Change MAJOR only when the model family changes; change MINOR for a material method change within a family; use exp/ep/seed suffixes for comparisons, checkpoints and random repeats."
+  },
+  "versions": [
+    {
+      "version": "v1.2",
+      "family": "tabular-embedding-mlp",
+      "name": "深层结构解析与schema特征",
+      "status": "rejected-experiment",
+      "runner": "scripts/run_cloud_v1_2_structured.sh",
+      "official_result": {
+        "scope": "full official validation",
+        "competition_score": 0.998438047351911,
+        "macro_f1": 0.998034890020854,
+        "accuracy": 0.9999294953655615,
+        "errors": 142,
+        "best_epoch": 4
+      },
+      "branch": "experiment/v1.2-structured",
+      "validation_rows": 2014052,
+      "readme": "README.md"
+    }
+  ]
+}

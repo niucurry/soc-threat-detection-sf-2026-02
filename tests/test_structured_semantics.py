@@ -8,9 +8,9 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
-from soc_threat.v5_structured_semantics import (  # noqa: E402
-    V5GroupedDrainModel,
-    parse_v5_log,
+from soc_threat.structured_semantics import (  # noqa: E402
+    StructuredDrainModel,
+    parse_structured_log,
 )
 
 
@@ -30,7 +30,7 @@ def raw(
     }
 
 
-class V5StructuredSemanticTests(unittest.TestCase):
+class StructuredSemanticTests(unittest.TestCase):
     def test_embedded_json_preserves_malware_action_and_severity(self) -> None:
         row = raw(
             "ORG-1780 ::: action=BLOCKED ::: payload={"
@@ -38,7 +38,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             '"actionTaken":"BLOCKED","severityCode":2,'
             '"streamName":"Endpoint Detection"}'
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.base.message_format, "json")
         self.assertEqual(parsed.structured_parser, "json_recursive")
         self.assertEqual(parsed.payload_parse_status, "success")
@@ -59,7 +59,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             '"application":{"name":"LastPass"}}'
             " ::: streamName=DUO"
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.payload_parse_status, "success")
         self.assertEqual(parsed.event_category, "authentication")
         self.assertEqual(parsed.authentication_factor, "duo_push")
@@ -75,7 +75,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             "cat=WF dst=10.252.74.96 dpt=80 act=DENY "
             "msg=[GeoIP Match] src=100.64.45.97 spt=51234 requestMethod=GET"
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.base.message_format, "cef")
         self.assertEqual(parsed.payload_parse_status, "success")
         self.assertEqual(parsed.event_action, "deny")
@@ -95,7 +95,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             'ORG-1657 ::: {"beat":"winlogbeat","code":"4672",'
             '"message":"Special privileges assigned to new logon"}'
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.base.message_format, "windows_json")
         self.assertEqual(parsed.base.event_code, "4672")
         self.assertEqual(parsed.base.event_name, "special_privileges")
@@ -111,7 +111,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             product="Windows Logs",
             vendor="Microsoft",
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.base.message_format, "windows_xml")
         self.assertEqual(parsed.payload_parse_status, "success")
         self.assertGreater(parsed.structured_field_count, 0)
@@ -122,7 +122,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             'ORG-1657 ::: {"kind":"HOST-56507","outcome":"ORG-0893",'
             '"name":"USER-0010-0346","level":"ORG-0706rmation"}'
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.event_type, "__MISSING__")
         self.assertEqual(parsed.event_outcome, "__MISSING__")
         self.assertEqual(parsed.application_name, "__MISSING__")
@@ -135,7 +135,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
             "10 840 1676902000 1676902060 REJECT OK",
             pipeline="vpc_flow",
         )
-        parsed = parse_v5_log(row)
+        parsed = parse_structured_log(row)
         self.assertEqual(parsed.base.message_format, "vpc_flow")
         self.assertEqual(parsed.payload_parse_status, "success")
         self.assertEqual(parsed.source_port, 51515)
@@ -143,7 +143,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
         self.assertEqual(parsed.network_protocol, "tcp")
         self.assertEqual(parsed.event_action, "reject")
 
-    def test_v5_model_persists_schema_and_semantic_frequencies(self) -> None:
+    def test_v1_2_model_persists_schema_and_semantic_frequencies(self) -> None:
         rows = [
             raw(
                 'prefix ::: payload={"event_type":"authentication",'
@@ -154,7 +154,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
                 '"factor":"duo_push","result":"success"}'
             ),
         ]
-        model = V5GroupedDrainModel()
+        model = StructuredDrainModel()
         for row in rows:
             model.fit_raw(row)
         before = model.feature_record(rows[0])
@@ -165,7 +165,7 @@ class V5StructuredSemanticTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             model_dir = Path(directory) / "model"
             model.save(model_dir)
-            restored = V5GroupedDrainModel.load(model_dir)
+            restored = StructuredDrainModel.load(model_dir)
             after = restored.feature_record(rows[0])
         self.assertEqual(after["schema_id"], before["schema_id"])
         self.assertEqual(after["semantic_template_id"], before["semantic_template_id"])

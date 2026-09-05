@@ -1,13 +1,13 @@
 from __future__ import annotations
 
 from soc_threat.feature_schema import (
-    CATEGORICAL_FEATURES as V1_CATEGORICAL_FEATURES,
+    CATEGORICAL_FEATURES as TABULAR_CATEGORICAL_FEATURES,
 )
-from soc_threat.feature_schema import NUMERIC_FEATURES as V1_NUMERIC_FEATURES
+from soc_threat.feature_schema import NUMERIC_FEATURES as TABULAR_NUMERIC_FEATURES
 
 
 CATEGORICAL_FEATURES = [
-    *V1_CATEGORICAL_FEATURES,
+    *TABULAR_CATEGORICAL_FEATURES,
     "vendor_name",
     "parser_group",
     "message_format",
@@ -25,7 +25,7 @@ CATEGORICAL_FEATURES = [
 ]
 
 NUMERIC_FEATURES = [
-    *V1_NUMERIC_FEATURES,
+    *TABULAR_NUMERIC_FEATURES,
     "utc_hour",
     "utc_weekday",
     "src_port_from_message",
@@ -54,7 +54,7 @@ def validate_feature_lists() -> None:
     ):
         duplicates = sorted({value for value in values if values.count(value) > 1})
         if duplicates:
-            raise ValueError(f"Duplicate {name} V4 features: {duplicates}")
+            raise ValueError(f"Duplicate {name} v1.1 Drain features: {duplicates}")
 
 
 validate_feature_lists()

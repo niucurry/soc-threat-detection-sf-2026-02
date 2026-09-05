@@ -1,31 +1,31 @@
 from __future__ import annotations
 
-from soc_threat.v4_feature_schema import (
-    CATEGORICAL_FEATURES as V4_CATEGORICAL_FEATURES,
+from soc_threat.drain_feature_schema import (
+    CATEGORICAL_FEATURES as DRAIN_CATEGORICAL_FEATURES,
 )
-from soc_threat.v4_feature_schema import NUMERIC_FEATURES as V4_NUMERIC_FEATURES
+from soc_threat.drain_feature_schema import NUMERIC_FEATURES as DRAIN_NUMERIC_FEATURES
 
 
 CATEGORICAL_FEATURES = [
-    *V4_CATEGORICAL_FEATURES,
+    *DRAIN_CATEGORICAL_FEATURES,
     "structured_parser",
     "payload_parse_status",
     "schema_id",
     "semantic_template_id",
-    "event_category_v5",
-    "event_type_v5",
-    "event_action_v5",
-    "event_outcome_v5",
-    "event_reason_v5",
+    "event_category",
+    "event_type",
+    "event_action",
+    "event_outcome",
+    "event_reason",
     "authentication_factor",
-    "service_name_v5",
-    "application_name_v5",
-    "rule_name_v5",
-    "threat_category_v5",
+    "service_name",
+    "application_name",
+    "rule_name",
+    "threat_category",
 ]
 
 NUMERIC_FEATURES = [
-    *V4_NUMERIC_FEATURES,
+    *DRAIN_NUMERIC_FEATURES,
     "structured_field_count",
     "security_field_count",
     "payload_parse_success",
@@ -53,7 +53,7 @@ def validate_feature_lists() -> None:
     ):
         duplicates = sorted({value for value in values if values.count(value) > 1})
         if duplicates:
-            raise ValueError(f"Duplicate {name} V5 features: {duplicates}")
+            raise ValueError(f"Duplicate {name} v1.2 structured features: {duplicates}")
 
 
 validate_feature_lists()

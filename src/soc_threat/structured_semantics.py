@@ -26,7 +26,7 @@ from soc_threat.log_semantics import (
 )
 
 
-V5_TEMPLATE_MODEL_VERSION = 2
+STRUCTURED_TEMPLATE_FORMAT_VERSION = 2
 MAX_STRUCTURED_FIELDS = 256
 MAX_STRUCTURED_CHARS = 32_000
 
@@ -103,7 +103,7 @@ REASON_PATTERNS = (
 
 
 @dataclass(frozen=True)
-class V5ParsedLog:
+class StructuredParsedLog:
     base: ParsedLog
     structured_parser: str
     payload_parse_status: str
@@ -715,7 +715,7 @@ def _semantic_template(
     return " ".join(parts)
 
 
-def parse_v5_log(raw: dict[str, Any], *, max_message_chars: int = 2048) -> V5ParsedLog:
+def parse_structured_log(raw: dict[str, Any], *, max_message_chars: int = 2048) -> StructuredParsedLog:
     base = parse_log(raw, max_message_chars=max_message_chars)
     message = _text(raw.get("message_sanitized"))
     fields: dict[str, list[Any]] = {}
@@ -878,7 +878,7 @@ def parse_v5_log(raw: dict[str, Any], *, max_message_chars: int = 2048) -> V5Par
         http_method=http_method,
     )
     semantic_template_id = _stable_key("sem", base.parser_group, semantic_template)
-    return V5ParsedLog(
+    return StructuredParsedLog(
         base=base,
         structured_parser=structured_parser,
         payload_parse_status=payload_status,
@@ -919,7 +919,7 @@ def parse_v5_log(raw: dict[str, Any], *, max_message_chars: int = 2048) -> V5Par
     )
 
 
-def should_use_v5_drain(parsed: V5ParsedLog) -> bool:
+def should_use_structured_drain(parsed: StructuredParsedLog) -> bool:
     return parsed.base.message_format in {
         "asa",
         "cef",
@@ -930,8 +930,8 @@ def should_use_v5_drain(parsed: V5ParsedLog) -> bool:
     } and bool(parsed.drain_message)
 
 
-class V5GroupedDrainModel:
-    """Train-only V5 structured schema counts plus grouped Drain templates."""
+class StructuredDrainModel:
+    """Train-only structured schema counts plus grouped Drain templates."""
 
     def __init__(self, settings: DrainSettings | None = None) -> None:
         self.settings = settings or DrainSettings()
@@ -964,12 +964,12 @@ class V5GroupedDrainModel:
         return miner
 
     def fit_raw(self, raw: dict[str, Any]) -> None:
-        parsed = parse_v5_log(raw, max_message_chars=self.settings.max_message_chars)
+        parsed = parse_structured_log(raw, max_message_chars=self.settings.max_message_chars)
         self.fitted_rows += 1
         if parsed.schema_id != MISSING_CATEGORY:
             self.schema_counts[parsed.schema_id] += 1
         self.semantic_template_counts[parsed.semantic_template_id] += 1
-        if should_use_v5_drain(parsed):
+        if should_use_structured_drain(parsed):
             miner = self._miner_for_fit(parsed.base.parser_group)
             if miner is not None:
                 miner.add_log_message(parsed.drain_message)
@@ -979,8 +979,8 @@ class V5GroupedDrainModel:
         self.direct_template_counts[key] += 1
         self.direct_rows += 1
 
-    def match_parsed(self, parsed: V5ParsedLog) -> TemplateMatch:
-        if should_use_v5_drain(parsed):
+    def match_parsed(self, parsed: StructuredParsedLog) -> TemplateMatch:
+        if should_use_structured_drain(parsed):
             miner = self.miners.get(parsed.base.parser_group)
             if miner is not None:
                 cluster = miner.match(
@@ -1022,7 +1022,7 @@ class V5GroupedDrainModel:
         )
 
     def feature_record(self, raw: dict[str, Any]) -> dict[str, Any]:
-        parsed = parse_v5_log(raw, max_message_chars=self.settings.max_message_chars)
+        parsed = parse_structured_log(raw, max_message_chars=self.settings.max_message_chars)
         base = parsed.base
         match = self.match_parsed(parsed)
         schema_frequency = int(self.schema_counts.get(parsed.schema_id, 0))
@@ -1079,16 +1079,16 @@ class V5GroupedDrainModel:
             "payload_parse_status": parsed.payload_parse_status,
             "schema_id": parsed.schema_id,
             "semantic_template_id": parsed.semantic_template_id,
-            "event_category_v5": parsed.event_category,
-            "event_type_v5": parsed.event_type,
-            "event_action_v5": parsed.event_action,
-            "event_outcome_v5": parsed.event_outcome,
-            "event_reason_v5": parsed.event_reason,
+            "event_category": parsed.event_category,
+            "event_type": parsed.event_type,
+            "event_action": parsed.event_action,
+            "event_outcome": parsed.event_outcome,
+            "event_reason": parsed.event_reason,
             "authentication_factor": parsed.authentication_factor,
-            "service_name_v5": parsed.service_name,
-            "application_name_v5": parsed.application_name,
-            "rule_name_v5": parsed.rule_name,
-            "threat_category_v5": parsed.threat_category,
+            "service_name": parsed.service_name,
+            "application_name": parsed.application_name,
+            "rule_name": parsed.rule_name,
+            "threat_category": parsed.threat_category,
             "structured_field_count": parsed.structured_field_count,
             "security_field_count": parsed.security_field_count,
             "payload_parse_success": parsed.payload_parse_success,
@@ -1110,7 +1110,7 @@ class V5GroupedDrainModel:
 
     def summary(self) -> dict[str, Any]:
         return {
-            "version": V5_TEMPLATE_MODEL_VERSION,
+            "version": STRUCTURED_TEMPLATE_FORMAT_VERSION,
             "settings": asdict(self.settings),
             "fitted_rows": self.fitted_rows,
             "drain_rows": self.drain_rows,
@@ -1165,14 +1165,15 @@ class V5GroupedDrainModel:
         return manifest
 
     @classmethod
-    def load(cls, model_dir: Path) -> "V5GroupedDrainModel":
+    def load(cls, model_dir: Path) -> "StructuredDrainModel":
         manifest_path = model_dir / "manifest.json"
         if not manifest_path.is_file():
             raise FileNotFoundError(manifest_path)
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-        if manifest.get("version") != V5_TEMPLATE_MODEL_VERSION:
+        if manifest.get("version") != STRUCTURED_TEMPLATE_FORMAT_VERSION:
             raise ValueError(
-                f"Unsupported V5 template model version: {manifest.get('version')}"
+                "Unsupported structured-template artifact format: "
+                f"{manifest.get('version')}"
             )
         model = cls(DrainSettings(**manifest["settings"]))
         model.fitted_rows = int(manifest.get("fitted_rows", 0))

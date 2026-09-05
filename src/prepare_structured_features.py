@@ -9,13 +9,13 @@ from typing import Any
 
 import duckdb
 
-from prepare_v4_features import (
+from prepare_drain_features import (
     iter_raw_rows,
     join_base_and_log_features,
     write_log_features,
 )
 from soc_threat.log_semantics import DrainSettings
-from soc_threat.v5_structured_semantics import V5GroupedDrainModel
+from soc_threat.structured_semantics import StructuredDrainModel
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +34,7 @@ def fit_template_model(
     settings: DrainSettings,
     force: bool,
 ) -> dict[str, Any]:
-    model = V5GroupedDrainModel(settings)
+    model = StructuredDrainModel(settings)
     processed = 0
     started = time.perf_counter()
     next_progress = progress_every
@@ -46,7 +46,7 @@ def fit_template_model(
             print(
                 json.dumps(
                     {
-                        "stage": "fit_v5_templates",
+                        "stage": "fit_structured_templates",
                         "rows": processed,
                         "groups": len(model.miners),
                         "schemas": len(model.schema_counts),
@@ -65,7 +65,7 @@ def fit_template_model(
         "fit_seconds": round(time.perf_counter() - started, 2),
     }
     print(
-        json.dumps({"stage": "v5_template_model_ready", **summary}, ensure_ascii=False),
+        json.dumps({"stage": "structured_template_model_ready", **summary}, ensure_ascii=False),
         flush=True,
     )
     return summary
@@ -75,7 +75,7 @@ def _sql_path(path: Path) -> str:
     return str(path.resolve()).replace("'", "''")
 
 
-def audit_v5_features(path: Path) -> dict[str, Any]:
+def audit_structured_features(path: Path) -> dict[str, Any]:
     connection = duckdb.connect()
     audit = connection.execute(
         f"""
@@ -129,23 +129,23 @@ def audit_v5_features(path: Path) -> dict[str, Any]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare V5.1 schema-aware structured and grouped-Drain features"
+        description="Prepare v1.2 schema-aware structured and grouped-Drain features"
     )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument(
         "--base-feature-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v5",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_2",
     )
     parser.add_argument(
         "--model-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v5_structured_neural" / "template_model",
+        default=PROJECT_ROOT / "artifacts" / "v1_2_structured" / "template_model",
     )
     parser.add_argument("--batch-size", type=int, default=20_000)
     parser.add_argument("--progress-every", type=int, default=100_000)
@@ -160,7 +160,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--reuse-template-model",
         action="store_true",
-        help="Load --model-dir instead of fitting V5 schema and Drain state again",
+        help="Load --model-dir instead of fitting structured schema and Drain state again",
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
@@ -170,8 +170,8 @@ def main() -> None:
     args = parse_args()
     train_raw = args.data_dir / "train.parquet"
     valid_raw = args.data_dir / "valid_input.parquet"
-    base_train = args.base_feature_dir / "v1_train.parquet"
-    base_valid = args.base_feature_dir / "v1_valid.parquet"
+    base_train = args.base_feature_dir / "tabular_train.parquet"
+    base_valid = args.base_feature_dir / "tabular_valid.parquet"
     for path in (train_raw, valid_raw, base_train, base_valid):
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -188,7 +188,7 @@ def main() -> None:
     )
     started = time.perf_counter()
     if args.reuse_template_model:
-        model = V5GroupedDrainModel.load(args.model_dir)
+        model = StructuredDrainModel.load(args.model_dir)
         template_manifest = model.summary()
     else:
         template_manifest = fit_template_model(
@@ -200,11 +200,11 @@ def main() -> None:
             settings=settings,
             force=args.force,
         )
-        model = V5GroupedDrainModel.load(args.model_dir)
+        model = StructuredDrainModel.load(args.model_dir)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    train_log = args.output_dir / "v5_train_log_features.parquet"
-    valid_log = args.output_dir / "v5_valid_log_features.parquet"
+    train_log = args.output_dir / "structured_train_log_features.parquet"
+    valid_log = args.output_dir / "structured_valid_log_features.parquet"
     log_summaries = [
         write_log_features(
             train_raw,
@@ -225,8 +225,8 @@ def main() -> None:
             force=args.force,
         ),
     ]
-    train_joined = args.output_dir / "v5_train.parquet"
-    valid_joined = args.output_dir / "v5_valid.parquet"
+    train_joined = args.output_dir / "structured_train.parquet"
+    valid_joined = args.output_dir / "structured_valid.parquet"
     joined = [
         join_base_and_log_features(
             base_train, train_log, train_joined, force=args.force
@@ -236,13 +236,13 @@ def main() -> None:
         ),
     ]
     summary = {
-        "version": "v5.1",
+        "model_version": "v1.2",
         "template_model": template_manifest,
         "log_features": log_summaries,
         "joined_features": joined,
         "feature_audit": {
-            "train": audit_v5_features(train_joined),
-            "valid": audit_v5_features(valid_joined),
+            "train": audit_structured_features(train_joined),
+            "valid": audit_structured_features(valid_joined),
         },
         "total_seconds": round(time.perf_counter() - started, 2),
         "leakage_guard": (
@@ -250,7 +250,7 @@ def main() -> None:
             "and numeric normalization are fitted on train.parquet only"
         ),
     }
-    (args.output_dir / "v5_manifest.json").write_text(
+    (args.output_dir / "structured_manifest.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)

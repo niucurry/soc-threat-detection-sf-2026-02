@@ -206,23 +206,23 @@ def join_base_and_log_features(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare V4 hybrid-parser and grouped-Drain neural features"
+        description="Prepare v1.1 hybrid-parser and grouped-Drain neural features"
     )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument(
         "--base-feature-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v4",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_1",
     )
     parser.add_argument(
         "--model-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v4_drain_neural" / "template_model",
+        default=PROJECT_ROOT / "artifacts" / "v1_1_drain" / "template_model",
     )
     parser.add_argument("--batch-size", type=int, default=20_000)
     parser.add_argument("--progress-every", type=int, default=100_000)
@@ -247,8 +247,8 @@ def main() -> None:
     args = parse_args()
     train_raw = args.data_dir / "train.parquet"
     valid_raw = args.data_dir / "valid_input.parquet"
-    base_train = args.base_feature_dir / "v1_train.parquet"
-    base_valid = args.base_feature_dir / "v1_valid.parquet"
+    base_train = args.base_feature_dir / "tabular_train.parquet"
+    base_valid = args.base_feature_dir / "tabular_valid.parquet"
     for path in (train_raw, valid_raw, base_train, base_valid):
         if not path.is_file():
             raise FileNotFoundError(path)
@@ -280,8 +280,8 @@ def main() -> None:
         model = GroupedDrainModel.load(args.model_dir)
 
     args.output_dir.mkdir(parents=True, exist_ok=True)
-    train_log = args.output_dir / "v4_train_log_features.parquet"
-    valid_log = args.output_dir / "v4_valid_log_features.parquet"
+    train_log = args.output_dir / "drain_train_log_features.parquet"
+    valid_log = args.output_dir / "drain_valid_log_features.parquet"
     log_summaries = [
         write_log_features(
             train_raw,
@@ -306,13 +306,13 @@ def main() -> None:
         join_base_and_log_features(
             base_train,
             train_log,
-            args.output_dir / "v4_train.parquet",
+            args.output_dir / "drain_train.parquet",
             force=args.force,
         ),
         join_base_and_log_features(
             base_valid,
             valid_log,
-            args.output_dir / "v4_valid.parquet",
+            args.output_dir / "drain_valid.parquet",
             force=args.force,
         ),
     ]
@@ -323,7 +323,8 @@ def main() -> None:
         "total_seconds": round(time.perf_counter() - started, 2),
         "leakage_guard": "Drain and direct-template frequencies fitted on train.parquet only",
     }
-    (args.output_dir / "v4_manifest.json").write_text(
+    summary["model_version"] = "v1.1"
+    (args.output_dir / "drain_manifest.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     print(json.dumps(summary, ensure_ascii=False, indent=2), flush=True)
