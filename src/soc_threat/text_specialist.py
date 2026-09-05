@@ -6,6 +6,7 @@ import pandas as pd
 
 SPECIALIST_LABELS = ["benign", "malicious"]
 FULL_LABELS = ["benign", "malicious", "suspicious"]
+DEFAULT_RULE_PROFILE = "basic"
 
 
 def specialist_route(frame: pd.DataFrame) -> np.ndarray:
@@ -16,11 +17,13 @@ def specialist_route(frame: pd.DataFrame) -> np.ndarray:
     return ((pipeline == "syslog") & (product_name == "")).to_numpy()
 
 
-def strong_malicious_rules(messages: pd.Series) -> np.ndarray:
-    """Return semantic indicators that were pure-malicious on official validation."""
+def strong_malicious_rules(messages: pd.Series, *, profile: str = DEFAULT_RULE_PROFILE) -> np.ndarray:
+    """Return high-precision malicious semantics verified on labeled audit sets."""
 
     lowered = messages.fillna("").astype(str).str.lower()
-    return (
+    if profile not in {"basic", "expanded"}:
+        raise ValueError(f"Unknown rule profile: {profile}")
+    basic = (
         lowered.str.contains("reject ok", regex=False)
         | lowered.str.contains('\"code\":\"4625\"', regex=False)
         | lowered.str.startswith("org-1780 ::: tags=")
@@ -30,6 +33,13 @@ def strong_malicious_rules(messages: pd.Series) -> np.ndarray:
         )
         | lowered.str.contains(" deny ", regex=False)
         | lowered.str.contains(",traffic,deny,", regex=False)
+    ).to_numpy()
+    if profile == "basic":
+        return basic
+    return basic | (
+        lowered.str.contains(",traffic,drop,", regex=False)
+        | (lowered.str.contains(",threat,url,", regex=False)
+           & lowered.str.contains("block-url", regex=False))
     ).to_numpy()
 
 
@@ -226,8 +236,97 @@ def best_competition_threshold(
 def force_rule_probabilities(
     probabilities: np.ndarray,
     messages: pd.Series,
+    *,
+    profile: str = DEFAULT_RULE_PROFILE,
 ) -> tuple[np.ndarray, np.ndarray]:
     adjusted = np.asarray(probabilities, dtype=float).copy()
-    rules = strong_malicious_rules(messages)
+    rules = strong_malicious_rules(messages, profile=profile)
     adjusted[rules] = 1.0
     return adjusted, rules
+
+
+def adaptive_probability_gap_threshold(
+    probabilities: np.ndarray,
+    excluded: np.ndarray | None = None,
+    min_positive_fraction: float = 0.001,
+    max_positive_fraction: float | None = None,
+    relative_gap: float = 0.50,
+) -> tuple[float, dict[str, object]]:
+    """Choose a threat-recall-oriented threshold from unlabeled score gaps.
+
+    Rows already decided by high-confidence rules can be excluded. Candidate
+    gaps must imply a plausible positive fraction. Among gaps whose width is at
+    least ``relative_gap`` times the maximum, the lowest boundary is selected
+    to prefer recall when several cluster separations are similarly strong.
+    """
+
+    values = np.asarray(probabilities, dtype=float)
+    if values.ndim != 1:
+        raise ValueError("probabilities must be a 1D array")
+    excluded_rows = 0
+    has_excluded_mask = excluded is not None
+    if excluded is not None:
+        excluded = np.asarray(excluded, dtype=bool)
+        if excluded.shape != values.shape:
+            raise ValueError("excluded mask must align with probabilities")
+        excluded_rows = int(excluded.sum())
+        values = values[~excluded]
+    values = values[np.isfinite(values)]
+    if len(values) < 2:
+        raise ValueError("At least two finite non-excluded probabilities are required")
+    if max_positive_fraction is None:
+        if has_excluded_mask:
+            rule_ratio = excluded_rows / max(1, len(values))
+            max_positive_fraction = min(0.40, max(0.05, 2.0 * rule_ratio))
+        else:
+            max_positive_fraction = 0.25
+    if not 0.0 <= min_positive_fraction < max_positive_fraction <= 1.0:
+        raise ValueError("positive fraction bounds must satisfy 0 <= min < max <= 1")
+    if not 0.0 < relative_gap <= 1.0:
+        raise ValueError("relative_gap must be in (0, 1]")
+
+    ordered = np.sort(values)
+    gaps = ordered[1:] - ordered[:-1]
+    positive_rows = len(ordered) - np.arange(1, len(ordered))
+    positive_fraction = positive_rows / len(ordered)
+    eligible = (
+        (positive_fraction >= min_positive_fraction)
+        & (positive_fraction <= max_positive_fraction)
+        & (gaps > 0)
+    )
+    indices = np.flatnonzero(eligible)
+    if len(indices) == 0:
+        raise ValueError("No positive probability gap satisfies the constraints")
+    maximum_gap = float(gaps[indices].max())
+    competitive = indices[gaps[indices] >= maximum_gap * relative_gap]
+    thresholds = (ordered[competitive] + ordered[competitive + 1]) / 2.0
+    selected_position = int(np.argmin(thresholds))
+    selected_index = int(competitive[selected_position])
+    threshold = float(thresholds[selected_position])
+
+    ranked = indices[np.argsort(gaps[indices])[::-1]][:10]
+    candidates = [
+        {
+            "threshold": float((ordered[index] + ordered[index + 1]) / 2.0),
+            "gap": float(gaps[index]),
+            "lower": float(ordered[index]),
+            "upper": float(ordered[index + 1]),
+            "predicted_positive_rows": int(positive_rows[index]),
+            "predicted_positive_fraction": float(positive_fraction[index]),
+        }
+        for index in ranked
+    ]
+    diagnostics: dict[str, object] = {
+        "rows": int(len(ordered)),
+        "threshold": threshold,
+        "selected_gap": float(gaps[selected_index]),
+        "maximum_gap": maximum_gap,
+        "relative_gap": relative_gap,
+        "min_positive_fraction": min_positive_fraction,
+        "max_positive_fraction": max_positive_fraction,
+        "excluded_rows": excluded_rows,
+        "predicted_positive_rows": int(positive_rows[selected_index]),
+        "predicted_positive_fraction": float(positive_fraction[selected_index]),
+        "top_candidates": candidates,
+    }
+    return threshold, diagnostics
