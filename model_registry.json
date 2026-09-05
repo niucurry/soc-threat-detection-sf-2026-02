@@ -1,0 +1,226 @@
+{
+  "schema_version": 1,
+  "current_version": "v5.2",
+  "current_default_experiment": "v5.2-exp01-anchor-content-gap2",
+  "current_branch": "release/v5.2-content-rescue",
+  "naming": {
+    "model_version": "vMAJOR.MINOR",
+    "experiment": "vMAJOR.MINOR-expNN-short-name",
+    "epoch_checkpoint": "vMAJOR.MINOR-expNN-epNN",
+    "seed_run": "vMAJOR.MINOR-expNN-seedNN",
+    "rule": "Change MAJOR only when the model family changes; change MINOR for a material method change within a family; use exp/ep/seed suffixes for comparisons, checkpoints and random repeats."
+  },
+  "versions": [
+    {
+      "version": "b0.1",
+      "family": "baseline",
+      "name": "CatBoost structured baseline",
+      "status": "archived-baseline",
+      "runner": null,
+      "legacy_aliases": ["V0", "V1 CatBoost"]
+    },
+    {
+      "version": "b0.2",
+      "family": "baseline",
+      "name": "rule-only competition baseline",
+      "status": "archived-baseline",
+      "runner": null,
+      "legacy_aliases": ["train_predict.py"]
+    },
+    {
+      "version": "v1.0",
+      "family": "tabular-embedding-mlp",
+      "name": "compact tabular neural baseline",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v1_0_tabular.sh",
+      "legacy_aliases": ["V1", "V1.2 weight sweep"],
+      "official_result": {
+        "scope": "full official validation",
+        "competition_score": 0.9574032043567936,
+        "macro_f1": 0.9126510510016193,
+        "accuracy": 0.9951178023208934,
+        "errors": 9833,
+        "best_epoch": 3
+      }
+    },
+    {
+      "version": "v1.1",
+      "family": "tabular-embedding-mlp",
+      "name": "grouped Drain and deterministic semantics",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v1_1_drain.sh",
+      "legacy_aliases": ["V4"],
+      "historical_commit": "d431e98",
+      "official_result": {
+        "scope": "full official validation",
+        "competition_score": 0.9990226565848461,
+        "macro_f1": 0.9990707818403894,
+        "accuracy": 0.9999622651252301,
+        "errors": 76,
+        "best_epoch": 1
+      }
+    },
+    {
+      "version": "v1.2",
+      "family": "tabular-embedding-mlp",
+      "name": "deep structured parser, schema and semantic templates",
+      "status": "rejected-experiment",
+      "runner": "scripts/run_cloud_v1_2_structured.sh",
+      "legacy_aliases": ["V5", "V5.1"],
+      "historical_commit": "261ef68",
+      "official_result": {
+        "scope": "full official validation",
+        "competition_score": 0.998438047351911,
+        "macro_f1": 0.998034890020854,
+        "accuracy": 0.9999294953655615,
+        "errors": 142,
+        "best_epoch": 4
+      }
+    },
+    {
+      "version": "v2.0",
+      "family": "hybrid-neural-text-rules",
+      "name": "tabular base plus routed TF-IDF/SGD specialist",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v2_2_hybrid.sh",
+      "legacy_aliases": ["V2-P0", "V2-P1", "V2-C", "V2-T"],
+      "historical_commit": "3bd15ba"
+    },
+    {
+      "version": "v2.1",
+      "family": "hybrid-neural-text-rules",
+      "name": "competition-score model and threshold selection",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v2_2_hybrid.sh",
+      "legacy_aliases": ["V2-F"],
+      "historical_commit": "3bd15ba"
+    },
+    {
+      "version": "v2.2",
+      "family": "hybrid-neural-text-rules",
+      "name": "semantic generalization audit and conservative overrides",
+      "status": "strong-non-primary-baseline",
+      "runner": "scripts/run_cloud_v2_2_hybrid.sh",
+      "incremental_runner": "scripts/run_cloud_v2_2_text_refresh.sh",
+      "legacy_aliases": ["V3", "V3-G"],
+      "historical_commit": "84a07f3",
+      "official_results": [
+        {
+          "experiment": "v2.2-exp01-conservative",
+          "scope": "full official validation",
+          "competition_score": 0.9998902649047847,
+          "macro_f1": 0.9999579178042195,
+          "errors": 10,
+          "risk": "low"
+        },
+        {
+          "experiment": "v2.2-exp02-validation-tuned",
+          "scope": "full official validation",
+          "competition_score": 1.0,
+          "macro_f1": 1.0,
+          "errors": 0,
+          "risk": "validation-derived override rules; not independent evidence"
+        }
+      ]
+    },
+    {
+      "version": "v3.0",
+      "family": "content-neural-fusion",
+      "name": "template-free fixed-hash content neural model",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v3_0_content.sh",
+      "legacy_aliases": ["V6"],
+      "historical_commit": "5e6c636",
+      "official_results": [
+        {"experiment": "v3.0-exp01-content-only", "competition_score": 0.903413323416246, "macro_f1": 0.875456762839011, "errors": 7567},
+        {"experiment": "v3.0-exp02-raw-fusion", "competition_score": 0.9762209762727161, "macro_f1": 0.9565217549231416, "errors": 2618},
+        {"experiment": "v3.0-exp03-field-fusion", "competition_score": 0.9113565658929034, "macro_f1": 0.9206922640920322, "errors": 5384}
+      ]
+    },
+    {
+      "version": "v4.0",
+      "family": "hierarchical-threat-subtype",
+      "name": "hierarchical threat detection and threat subtype model",
+      "status": "frozen-anchor",
+      "runner": "scripts/run_cloud_v4_0_hierarchical.sh",
+      "seed_runner": "scripts/run_cloud_v4_0_seed_sweep.sh",
+      "legacy_aliases": ["V7", "H1", "H2"],
+      "historical_commit": "e75454e",
+      "official_results": [
+        {"experiment": "v4.0-exp01-no-novelty", "competition_score": 0.9993140394289346, "macro_f1": 0.999527322822607, "errors": 46, "best_epoch": 1},
+        {"experiment": "v4.0-exp02-novelty", "competition_score": 0.9993140394289346, "macro_f1": 0.999527322822607, "errors": 46, "best_epoch": 1, "checkpoint_available": false},
+        {"experiment": "v4.0-exp02-seed20260829", "competition_score": 0.9993387401713992, "errors": 57, "threat_false_positive": 1, "threat_false_negative": 32, "subtype_confusion": 24, "checkpoint_available": true}
+      ]
+    },
+    {
+      "version": "v4.1",
+      "family": "hierarchical-threat-subtype",
+      "name": "multi-view content and evidence-preservation experiments",
+      "status": "rejected-experiment",
+      "runner": "scripts/run_cloud_v4_1_multiview.sh",
+      "legacy_aliases": ["V8", "A1", "B1", "C1"],
+      "historical_commit": "65490ca",
+      "official_results": [
+        {"experiment": "v4.1-exp01-multiview-standard", "competition_score": 0.9967185764373843, "errors": 208},
+        {"experiment": "v4.1-exp02-raw-evidence", "competition_score": 0.9992727909041258, "errors": 56},
+        {"experiment": "v4.1-exp03-multiview-evidence", "competition_score": 0.9992315501380292, "errors": 66}
+      ]
+    },
+    {
+      "version": "v5.0",
+      "family": "frozen-anchor-residual",
+      "name": "metadata-evidence anchored residual",
+      "status": "rejected-experiment",
+      "runner": "scripts/run_cloud_v5_anchored_residual.sh",
+      "legacy_aliases": ["V9", "R1", "R2"],
+      "historical_commit": "e73742c",
+      "official_result": {"competition_score": 0.9993387401713992, "errors": 57, "best_epoch": 0, "changed_predictions": 0}
+    },
+    {
+      "version": "v5.1",
+      "family": "frozen-anchor-residual",
+      "name": "content-evidence anchored residual, unconstrained gap",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v5_anchored_residual.sh",
+      "legacy_aliases": ["V10", "CR1", "CR2"],
+      "historical_commit": "b4504e5",
+      "official_results": [
+        {"experiment": "v5.1-exp01-anchor-content-gap24", "competition_score": 0.9994966836, "errors": 78, "threat_false_positive": 43, "threat_false_negative": 11},
+        {"experiment": "v5.1-exp02-multiview-content-gap24", "competition_score": 0.9994142658, "errors": 98, "threat_false_positive": 63, "threat_false_negative": 11}
+      ]
+    },
+    {
+      "version": "v5.2",
+      "family": "frozen-anchor-residual",
+      "name": "content rescue inside a local trust region",
+      "status": "current",
+      "runner": "scripts/run_cloud_v5_anchored_residual.sh",
+      "legacy_aliases": ["V10.1", "gap=2"],
+      "official_results": [
+        {
+          "experiment": "v5.2-exp01-anchor-content-gap2",
+          "scope": "full official validation",
+          "competition_score": 0.9996698618032245,
+          "macro_f1": 0.9995501728,
+          "multiclass_log_loss": 0.0002189643,
+          "errors": 36,
+          "threat_false_positive": 1,
+          "threat_false_negative": 11,
+          "subtype_confusion": 24,
+          "fixed_anchor_errors": 21,
+          "new_errors": 0,
+          "default": true
+        },
+        {
+          "experiment": "v5.2-exp02-multiview-content-gap2",
+          "scope": "full official validation",
+          "competition_score": 0.9996698618032245,
+          "multiclass_log_loss": 0.0002179833,
+          "errors": 36,
+          "default": false,
+          "reason": "same hard decisions as exp01 with higher complexity"
+        }
+      ]
+    }
+  ]
+}

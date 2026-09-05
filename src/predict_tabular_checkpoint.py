@@ -27,7 +27,7 @@ from train_npu_tabular import (  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run an unlabeled feature parquet through a V1 checkpoint"
+        description="Run an unlabeled feature parquet through a v1.x checkpoint"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--data", type=Path, required=True)

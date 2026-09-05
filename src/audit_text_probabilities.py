@@ -19,7 +19,7 @@ from train_text_specialist import load_route_frames  # noqa: E402
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Audit V2 raw text probabilities across train and validation"
+        description="Audit v2.x raw text probabilities across train and validation"
     )
     parser.add_argument("--model", type=Path, required=True)
     parser.add_argument("--train-raw", type=Path, required=True)
@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("artifacts/v3_generalization/probability_audit.json"),
+        default=Path("artifacts/v2_2_generalization/probability_audit.json"),
     )
     return parser.parse_args()
 

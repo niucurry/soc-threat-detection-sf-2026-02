@@ -1,331 +1,105 @@
-# SOC日志三分类项目
+# SOC 日志威胁检测
 
-目标：将每条日志分类为 `benign`（正常）、`malicious`（恶意）或
-`suspicious`（可疑）。所有实验都遵守两个原则：不使用 `event_id` 猜标签，
-并始终在官方提供的私有验证标签上报告三类分别的效果。
+本仓库把安全日志分类为 `benign`、`malicious`、`suspicious`。当前正式候选是
+`v5.2-exp01-anchor-content-gap2`：冻结 v4.0 分层神经网络，只在“锚点判 benign、独立内容
+分支判 threat”的冲突中学习可信度，并把最大 logit 修正限制为 2。
 
-## 推荐赛方镜像
+完整官方验证集结果：Competition Score `0.9996698618`，36 个三分类错误，threat FP=1、
+FN=11、子类型混淆=24；相对可复现 seed29 锚点修正 21 行、新增错误 0。
 
-使用：`pytorch_v1.1:2.4.0-npu-py310-ubuntu22.04-aarch64`。
+## 快速运行当前版本
 
-它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
-自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
-
-## V7 实验：分层内容模型 + 未见组合门控
-
-V7 根据 V6 E2 的错误结构，将三分类拆成“正常/威胁”和“恶意/可疑
-子类型”两个任务。正文负责提供威胁证据，产品与来源元数据负责子类型
-基础判断；训练期未见过的 `product + content_family + action` 组合会降低
-正文对子类型的影响。组合频次只使用训练输入，不使用标签或验证数据。
+原始数据目录必须同时包含 `train.parquet`、`valid_input.parquet`、
+`valid_answer_private.parquet`。若数据在 `/root/work`，先得到 v4.0 seed29 锚点：
 
 ```bash
-mkdir -p artifacts/v7_hierarchical_content
-nohup bash scripts/run_cloud_v7_hierarchical_content.sh /root/work \
-  > artifacts/v7_hierarchical_content/nohup.log 2>&1 &
-echo $! > artifacts/v7_hierarchical_content/train.pid
-tail -f artifacts/v7_hierarchical_content/nohup.log
+mkdir -p artifacts/v4_0_hierarchical
+nohup bash scripts/run_cloud_v4_0_hierarchical.sh /root/work \
+  > artifacts/v4_0_hierarchical/nohup.log 2>&1 &
+echo $! > artifacts/v4_0_hierarchical/train.pid
+tail -f artifacts/v4_0_hierarchical/nohup.log
 ```
 
-V7 继续使用固定哈希的原始内容 token，不使用 Drain、`template_id` 或
-schema ID。详细设计、实验组和回传命令见 `docs/V7_HIERARCHICAL_CONTENT.md`。
-
-## V6 实验：内容学习双塔神经网络
-
-V6 不使用 `template_id`、`schema_id`、`semantic_template_id` 或 Drain
-聚类号做分类。它保留动作、原因、事件码和字段名等内容，屏蔽 IP、
-UUID、时间和脱敏实体，然后使用固定哈希的单词、双词和字符 n-gram
-嵌入学习日志内容。实验同时训练内容单模型、V1+原文融合、V1+字段
-感知内容融合三组模型。
+基础训练完成后运行固定 seed 对照；当前 V5 默认锚点是 seed `20260829`：
 
 ```bash
-mkdir -p artifacts/v6_content_neural
-nohup bash scripts/run_cloud_v6_content_neural.sh /root/work \
-  > artifacts/v6_content_neural/nohup.log 2>&1 &
-echo $! > artifacts/v6_content_neural/train.pid
-tail -f artifacts/v6_content_neural/nohup.log
+nohup bash scripts/run_cloud_v4_0_seed_sweep.sh \
+  data/processed/v3_0 artifacts/v4_0_hierarchical \
+  > artifacts/v4_0_hierarchical/seed_sweep.log 2>&1 &
+echo $! > artifacts/v4_0_hierarchical/seed_sweep.pid
+tail -f artifacts/v4_0_hierarchical/seed_sweep.log
 ```
 
-内容预处理使用原子分片；云环境中断后重新执行同一命令即可续跑。
-详细设计和结果回传命令见 `docs/V6_CONTENT_NEURAL.md`。
-
-## V5.1 第一阶段：深层结构解析 + 分组 Drain + 神经网络
-
-V5.1 只训练第一个 PyTorch/NPU 神经网络，不使用正文专模、
-人工规则或 V3 覆盖结果。它不是把 Drain 参数继续调大，而是先将
-JSON、脱敏后的 Windows XML、CEF 和 VPC Flow 拆解成有意义的结构字段；
-Drain 只处理剩余的自由文本。新增的核心特征包括结构 schema、语义模板、
-动作、结果、原因、事件类型、认证因子、应用、规则、端口和严重程度。
-
-数据在 `/root/work` 时运行：
+然后训练当前正式候选。默认只跑计算成本更低、hard result 最好的 exp01：
 
 ```bash
-mkdir -p artifacts/v5_structured_neural
-nohup bash scripts/run_cloud_v5_structured_neural.sh /root/work \
-  > artifacts/v5_structured_neural/nohup.log 2>&1 &
-echo $! > artifacts/v5_structured_neural/train.pid
-tail -f artifacts/v5_structured_neural/nohup.log
+mkdir -p artifacts/v5_2_content_rescue
+nohup bash scripts/run_cloud_v5_anchored_residual.sh /root/work \
+  > artifacts/v5_2_content_rescue/nohup.log 2>&1 &
+echo $! > artifacts/v5_2_content_rescue/train.pid
+tail -f artifacts/v5_2_content_rescue/nohup.log
 ```
 
-训练完成后会自动生成神经网络指标、错误明细、错误分组统计；如果
-V4 预测文件仍在默认位置，还会自动统计 V4 改对了多少、V5.1 新错了
-多少。详细原理、输出文件和回传命令见 `docs/V5_STRUCTURED_NEURAL.md`。
+要额外跑不作为默认的多视图 exp02，设置 `V5_RUN_MULTIVIEW=1`。不要继续扫描 gap；当前默认
+`V5_MAX_CONFLICT_GAP=2` 已经是验证集引导的消融，需要用时间外推/OOF 做下一次确认。
 
-## V4 实验分支：混合解析 + 分组 Drain + 神经网络
+### 复用旧 V6/V7/V8 云端产物
 
-V4 首先只改造第一个 PyTorch/NPU 神经网络，暂不叠加 V2 正文专模和 V3 规则，
-从而能与 V1 结构模型进行公平对比。新增流程如下：
-
-1. Windows XML/JSON、CEF、ASA、VPC Flow 等先做确定性语义提取；
-2. 对 ASA、Linux 和普通 Syslog 等自由文本按
-   `pipeline|vendor|product|format` 分组训练 Drain；
-3. Drain 只在 `train.parquet` 上拟合，验证集仅匹配已冻结模板；
-4. 把模板、动作、协议、事件码、目标端口、解析状态和模板频率作为类别嵌入或
-   数值特征，直接输入原 PyTorch 神经网络；
-5. 保留 V1 全部结构特征，以及空正文、未见模板和解析失败的显式标记。
-
-云平台完整训练：
+旧目录不会自动改名或删除。假设旧产物在 `/root/soc-threat-detection-sf-2026-02-1`：
 
 ```bash
-mkdir -p artifacts/v4_drain_neural
-nohup bash scripts/run_cloud_v4_drain_neural.sh data/raw \
-  > artifacts/v4_drain_neural/nohup.log 2>&1 &
-echo $! > artifacts/v4_drain_neural/train.pid
-tail -f artifacts/v4_drain_neural/nohup.log
+bash scripts/link_legacy_artifacts.sh \
+  /root/soc-threat-detection-sf-2026-02-1
+
+V5_REUSE_CONTENT_FILES=1 \
+nohup bash scripts/run_cloud_v5_anchored_residual.sh /root/work \
+  > artifacts/v5_2_content_rescue/nohup.log 2>&1 &
 ```
 
-如数据直接位于 `/root/work`：
+迁移脚本只建立符号链接，遇到已存在目标会保留，不复制或删除源权重。
 
-```bash
-nohup bash scripts/run_cloud_v4_drain_neural.sh /root/work \
-  > artifacts/v4_drain_neural/nohup.log 2>&1 &
-```
+## 版本总览
 
-主要结果为：
+| 标准版本 | 旧名称 | 基础方法 | 完整验证结果 | 决策 |
+|---|---|---|---:|---|
+| v1.0 | V1 | 结构类别 Embedding + MLP | 9,833 错；Score 0.957403 | 基线 |
+| v1.1 | V4 | 同 MLP + 分格式解析/分组 Drain | 76 错；0.999023 | 被后续替代 |
+| v1.2 | V5.1 | 同 MLP + 深层结构/schema | 142 错；0.998438 | 否定实验 |
+| v2.2 | V3-G | 表格模型 + 路由 TF-IDF/SGD + 规则 | 保守 10 错；调优 0 错 | 强混合基线；有验证规则风险 |
+| v3.0 | V6 | 无模板内容神经网络 | 最佳 2,618 错；0.976221 | 发现单头任务混淆 |
+| v4.0 | V7 | 分层 threat/subtype 神经网络 | 历史 46 错；可复现锚点 57 错 | 冻结锚点 |
+| v4.1 | V8 | 多视图/证据保持 | 最佳 56 错；0.999273 | 未超过 v4.0 |
+| v5.0 | V9 | metadata 锚定残差 | 57 错；无改动 | 候选条件错误 |
+| v5.1 | V10 | content 残差，gap=24 | 78 错；0.999497 | 修 FN 但新增 42 FP |
+| v5.2 | V10.1 | content 残差，gap=2 | 36 错；0.999670 | 当前候选 |
+
+机器可读的全部实验、结果和历史提交在 `model_registry.json`。
+
+## 文档导航
+
+- `docs/DEVELOPMENT_LOG_STANDARD.md`：从数据、完整输入、模型、实验、失败原因到下一步的标准开发日志；
+- `docs/VERSIONING.md`：版本、实验、seed、epoch、分支和产物命名规则；
+- `docs/versions/V1_TABULAR_FAMILY.md`：v1.0/v1.1/v1.2；
+- `docs/versions/V2_HYBRID_FAMILY.md`：v2.0/v2.1/v2.2；
+- `docs/versions/V3_CONTENT_FAMILY.md`：v3.0 三组内容实验；
+- `docs/versions/V4_HIERARCHICAL_FAMILY.md`：v4.0/v4.1；
+- `docs/versions/V5_RESIDUAL_FAMILY.md`：v5.0/v5.1/v5.2。
+
+## 代码入口
 
 ```text
-artifacts/v4_drain_neural/base/metrics.json
-artifacts/v4_drain_neural/base/valid_predictions.parquet
-artifacts/v4_drain_neural/template_model/manifest.json
-data/processed/v4/v4_manifest.json
+scripts/run_cloud_v1_0_tabular.sh
+scripts/run_cloud_v1_0_weight_sweep.sh
+scripts/run_cloud_v1_1_drain.sh
+scripts/run_cloud_v1_2_structured.sh
+scripts/run_cloud_v2_2_hybrid.sh
+scripts/run_cloud_v2_2_text_refresh.sh
+scripts/run_cloud_v3_0_content.sh
+scripts/run_cloud_v4_0_hierarchical.sh
+scripts/run_cloud_v4_0_seed_sweep.sh
+scripts/run_cloud_v4_1_multiview.sh
+scripts/run_cloud_v5_anchored_residual.sh
 ```
 
-重新构建模板和特征时设置 `V4_FORCE_PREPARE=1`。详细方法、烟雾测试和结果回传
-清单见 `docs/V4_DRAIN_NEURAL.md`。
-
-## 当前实验：V8 多视图内容与证据保留
-
-V8延续V7分层神经网络，针对V7剩余46条威胁漏报进行两项独立改进：
-
-- 将单个96-token正文改成开头、中部、结尾、键值关系四个视图；
-- 在训练期约束最终威胁头不能无条件消除元数据或内容辅助头的有效证据。
-
-V8包含三组对照：`a1_multiview_standard`、`b1_raw_evidence` 和
-`c1_multiview_evidence`。完整方法、恢复机制、输出和验收条件见
-`docs/V8_MULTIVIEW_EVIDENCE.md`。
-
-云端数据在 `/root/work` 时运行：
-
-```bash
-mkdir -p artifacts/v8_multiview_evidence
-nohup bash scripts/run_cloud_v8_multiview_evidence.sh /root/work \
-  > artifacts/v8_multiview_evidence/nohup.log 2>&1 &
-echo $! > artifacts/v8_multiview_evidence/train.pid
-tail -f artifacts/v8_multiview_evidence/nohup.log
-```
-
-## V3 语义增强混合模型
-
-V3 延续 V2 的分层检测器，并针对未见日志格式做了泛化审计：
-
-1. PyTorch 结构模型负责全部日志的三分类基础判断；
-2. 对 `pipeline=syslog` 且产品名为空的混合簇，使用日志正文
-   TF-IDF + SGD 二分类器重新判断正常/恶意；
-3. 对 `REJECT OK`、Windows 4625、明确的防火墙拒绝/丢弃、URL 阻断等
-   高置信安全语义使用规则兜底；
-4. 提供保守版和使用少量可疑事件规则的调优版，并严格校验验证预测的
-   `event_id` 完整性。
-
-训练集恶意占比约 5.43%，官方验证集约 0.70%。V1 结构特征无法区分
-产品名为空的正常和恶意日志，导致 9,793 条正常日志被误报为恶意；V2 的
-正文专用模型用于解决这个问题。
-
-正式评分按下式计算：
-
-```text
-Final Score = 0.40 × Threat-Binary-F1
-            + 0.25 × Threat-Binary-Recall
-            + 0.15 × Threat Recall
-            + 0.10 × Macro-F1
-            + 0.05 × Soft Label Score
-            + 0.05 × Balanced Accuracy
-```
-
-其中 Threat-Binary 将 `suspicious` 和 `malicious` 合并为威胁类；Threat
-Recall 是两种威胁召回率的平均值。当前代码根据评分说明把 Soft Label Score
-实现为逐行平均：预测完全正确计 1，`suspicious` 与 `malicious` 相互错判计
-0.5，正常与威胁之间错判计 0。正文专模阈值和结构模型最佳轮次均优先按照
-Final Score 选择，不再只优化 Macro-F1。
-
-在提供的 2,014,052 条官方外部验证数据上，本地复现实验如下：
-
-| 版本 | 正式综合分 | Macro-F1 | 错误行数 | 说明 |
-|---|---:|---:|---:|---|
-| V1 无类别权重 | 0.957210 | 0.912286 | 9,857 | 原结构模型 |
-| V3 保守版 | 0.999890 | 0.999958 | 10 | 恶意语义增强，不使用可疑事件覆盖规则 |
-| V3 调优版 | 1.000000 | 1.000000 | 0 | 再增加 DLP 和 Duo 高精度可疑规则 |
-
-这些是已提供验证标签上的结果，不代表隐藏数据一定满分。调优版更贴合当前
-验证分布，保守版对新数据源的假设更少，后续仍需通过隔离验证比较泛化能力。
-
-V3 审计了 407 万条训练/验证日志。新增的 `TRAFFIC,drop` 和
-`THREAT,url + block-url` 语义分别覆盖 5,826 和 200 条验证恶意日志，正常命中
-均为 0。高置信恶意规则总覆盖由 8,024 提升到 14,050，云端正文决策阈值由约
-0.059 提升到 0.199。剩余两条 Windows 4672 事件继续交给正文模型判断，因为
-该事件码在真实环境中不必然代表攻击。
-
-V3 已在 Ascend 云平台完成增量复核：正文模型耗时 59.31 秒，保守版正式综合分
-`0.9998902649`，调优版正式综合分 `1.0`，完整性审计无缺失、重复或标签不一致。
-
-## V9锚定冲突残差实验
-
-V9冻结当前最佳单神经网络V7-H2，只在“最终判benign、元数据分支判threat”的冲突样本
-上允许零初始化残差修改第一层威胁概率。R1使用V7已有内容，R2额外加入从V7 token编码器
-迁移初始化的四视图内容。epoch 0逐行复现V7；训练没有提升时自动回退，不接受退化模型。
-
-云端运行：
-
-```bash
-mkdir -p artifacts/v9_anchored_residual
-nohup bash scripts/run_cloud_v9_anchored_residual.sh /root/work \
-  > artifacts/v9_anchored_residual/nohup.log 2>&1 &
-```
-
-完整设计、恢复方法和结果命令见 [V9_ANCHORED_RESIDUAL.md](docs/V9_ANCHORED_RESIDUAL.md)。
-
-## V10内容证据救援实验
-
-V10保持seed29 V7-H2完全冻结，只在“最终判benign、独立内容分支判threat”的反向冲突上
-允许零初始化残差。可信度使用训练集threat正例与高content-margin困难benign学习，不把
-验证集审计得到的0.94/0.96阈值写成规则。CR1使用已有冻结表示，CR2额外使用四视图内容；
-epoch 0仍是精确锚点，训练退化时自动回退。
-
-云端运行：
-
-```bash
-mkdir -p artifacts/v10_content_rescue
-nohup env V10_PROCESSED_ROOT=/root/soc-threat-detection-sf-2026-02-1/data/processed \
-  bash scripts/run_cloud_v10_content_rescue.sh /root/work \
-  > artifacts/v10_content_rescue/nohup.log 2>&1 &
-```
-
-完整依据、约束和结果命令见 [V10_CONTENT_RESCUE.md](docs/V10_CONTENT_RESCUE.md)。
-
-## V3 云端复核
-
-三份数据仍按下列文件名放置：
-
-```text
-data/raw/train.parquet
-data/raw/valid_input.parquet
-data/raw/valid_answer_private.parquet
-```
-
-V3 只更新正文规则层和阈值，直接复用已经完成的 V2 结构模型验证预测，避免
-重复执行 NPU 训练。在推荐镜像中使用后台方式运行：
-
-```bash
-mkdir -p artifacts/v3_semantic_rules
-nohup bash scripts/run_cloud_v3.sh data/raw \
-  > artifacts/v3_semantic_rules/nohup.log 2>&1 &
-echo $! > artifacts/v3_semantic_rules/train.pid
-cat artifacts/v3_semantic_rules/train.pid
-```
-
-如果数据位于其他目录：
-
-```bash
-mkdir -p artifacts/v3_semantic_rules
-nohup bash scripts/run_cloud_v3.sh /root/work \
-  > artifacts/v3_semantic_rules/nohup.log 2>&1 &
-echo $! > artifacts/v3_semantic_rules/train.pid
-cat artifacts/v3_semantic_rules/train.pid
-```
-
-脚本默认复用 `artifacts/v2_hybrid/base/valid_predictions.parquet`。如果 V2 基础
-预测在其他位置，可在命令前设置 `V3_BASE_PREDICTIONS=/实际路径/valid_predictions.parquet`。
-
-查看总进度日志：
-
-```bash
-tail -f artifacts/v3_semantic_rules/nohup.log
-```
-
-按 `Ctrl+C` 只退出日志查看，不会终止后台训练。检查进程和 NPU：
-
-```bash
-PID=$(cat artifacts/v3_semantic_rules/train.pid)
-ps -fp "$PID"
-npu-smi info
-```
-
-正文模型开始训练后，还可以单独查看输出：
-
-```bash
-tail -f artifacts/v3_semantic_rules/text/train_console.log
-```
-
-主要结果位于：
-
-```text
-artifacts/v3_semantic_rules/text/model.joblib
-artifacts/v3_semantic_rules/validation_conservative/metrics.json
-artifacts/v3_semantic_rules/validation_tuned/metrics.json
-```
-
-## V1 结构基线
-
-V1 云端主线是“类别嵌入 + 数值网络”的 PyTorch 结构化模型：
-
-- 不使用 `event_id`、完整时间、原始 IP、原始主机名或原始用户名；
-- 使用产品、采集管道、端口范围、字段缺失情况、消息长度和少量关键词；
-- 使用可调节的类别平衡权重，避免模型只预测占比最大的正常类别；
-- 主要评价指标为 Macro-F1，同时报告每一类召回率和混淆矩阵。
-
-当前上传包只包含PyTorch-NPU主线代码，避免在ARM镜像中安装不必要的CPU模型依赖。
-
-## V1 上传目录
-
-把三份原始文件放到：
-
-```text
-data/raw/train.parquet
-data/raw/valid_input.parquet
-data/raw/valid_answer_private.parquet
-```
-
-随后在项目根目录运行：
-
-```bash
-bash scripts/run_cloud_v1.sh
-```
-
-如果三份原始文件已经直接放在云平台的 `/root/work`，不需要复制文件，运行：
-
-```bash
-bash scripts/run_cloud_v1.sh /root/work
-```
-
-正式训练前可在相同的20万训练/验证样本上比较四种类别补偿强度：
-
-```bash
-bash scripts/run_weight_sweep_v1.sh
-```
-
-汇总结果保存在 `artifacts/v1_weight_sweep/comparison.json`，用于选择能兼顾
-攻击召回与误报数量的正式参数。
-
-训练日志会实时显示，并保存到
-`artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
-也会保存在同一目录。
-
-详细上传和故障处理步骤见 `UPLOAD_INSTRUCTIONS.md`。
+所有训练入口都接受原始数据目录作为第一个参数。版本内重复实验使用 `expNN`，随机重复使用
+`seedNN`，不再为一次轻微超参修改创建新的模型版本。

@@ -461,7 +461,7 @@ class GroupedDrainModel:
             from drain3.template_miner_config import TemplateMinerConfig
         except ImportError as exc:  # pragma: no cover - exercised by cloud setup
             raise RuntimeError(
-                "Drain3 is required for V4 features. Install requirements-npu.txt."
+                "Drain3 is required for v1.1 features. Install requirements-npu.txt."
             ) from exc
         config = TemplateMinerConfig()
         config.drain_sim_th = self.settings.similarity_threshold

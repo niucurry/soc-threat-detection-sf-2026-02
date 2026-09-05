@@ -193,12 +193,12 @@ def export_features(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Prepare compact V1 SOC features")
+    parser = argparse.ArgumentParser(description="Prepare compact v1.0 SOC features")
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR)
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0",
     )
     parser.add_argument("--force", action="store_true")
     return parser.parse_args()
@@ -220,24 +220,29 @@ def main() -> None:
         export_features(
             connection,
             input_path=train_input,
-            output_path=args.output_dir / "v1_train.parquet",
+            output_path=args.output_dir / "tabular_train.parquet",
             answer_path=None,
             force=args.force,
         ),
         export_features(
             connection,
             input_path=valid_input,
-            output_path=args.output_dir / "v1_valid.parquet",
+            output_path=args.output_dir / "tabular_valid.parquet",
             answer_path=valid_answer,
             force=args.force,
         ),
     ]
     connection.close()
-    manifest_path = args.output_dir / "v1_manifest.json"
+    manifest_path = args.output_dir / "tabular_manifest.json"
+    manifest = {
+        "model_version": "v1.0",
+        "legacy_alias": "V1",
+        "splits": summaries,
+    }
     manifest_path.write_text(
-        json.dumps(summaries, ensure_ascii=False, indent=2), encoding="utf-8"
+        json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    print(json.dumps(summaries, ensure_ascii=False, indent=2))
+    print(json.dumps(manifest, ensure_ascii=False, indent=2))
 
 
 if __name__ == "__main__":

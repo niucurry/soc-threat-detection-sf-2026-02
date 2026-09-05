@@ -21,35 +21,35 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 
 from soc_threat import LABELS  # noqa: E402
 from soc_threat.feature_schema import (  # noqa: E402
-    CATEGORICAL_FEATURES as V1_CATEGORICAL_FEATURES,
+    CATEGORICAL_FEATURES as TABULAR_CATEGORICAL_FEATURES,
 )
-from soc_threat.feature_schema import NUMERIC_FEATURES as V1_NUMERIC_FEATURES  # noqa: E402
+from soc_threat.feature_schema import NUMERIC_FEATURES as TABULAR_NUMERIC_FEATURES  # noqa: E402
 from soc_threat.metrics import evaluate_predictions  # noqa: E402
 
 
-# Backward-compatible aliases used by older imports and V1 checkpoints.
-CATEGORICAL_FEATURES = V1_CATEGORICAL_FEATURES
-NUMERIC_FEATURES = V1_NUMERIC_FEATURES
-
-
 def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
-    if name == "v1":
-        return list(V1_CATEGORICAL_FEATURES), list(V1_NUMERIC_FEATURES)
-    if name == "v4":
-        from soc_threat.v4_feature_schema import (
-            CATEGORICAL_FEATURES as V4_CATEGORICAL_FEATURES,
+    canonical = {"v1": "tabular", "v4": "drain", "v5": "structured"}.get(
+        name, name
+    )
+    if canonical == "tabular":
+        return list(TABULAR_CATEGORICAL_FEATURES), list(TABULAR_NUMERIC_FEATURES)
+    if canonical == "drain":
+        from soc_threat.drain_feature_schema import (
+            CATEGORICAL_FEATURES as DRAIN_CATEGORICAL_FEATURES,
         )
-        from soc_threat.v4_feature_schema import NUMERIC_FEATURES as V4_NUMERIC_FEATURES
+        from soc_threat.drain_feature_schema import NUMERIC_FEATURES as DRAIN_NUMERIC_FEATURES
 
-        return list(V4_CATEGORICAL_FEATURES), list(V4_NUMERIC_FEATURES)
-    if name == "v5":
-        from soc_threat.v5_feature_schema import (
-            CATEGORICAL_FEATURES as V5_CATEGORICAL_FEATURES,
+        return list(DRAIN_CATEGORICAL_FEATURES), list(DRAIN_NUMERIC_FEATURES)
+    if canonical == "structured":
+        from soc_threat.structured_feature_schema import (
+            CATEGORICAL_FEATURES as STRUCTURED_CATEGORICAL_FEATURES,
         )
-        from soc_threat.v5_feature_schema import NUMERIC_FEATURES as V5_NUMERIC_FEATURES
+        from soc_threat.structured_feature_schema import NUMERIC_FEATURES as STRUCTURED_NUMERIC_FEATURES
 
-        return list(V5_CATEGORICAL_FEATURES), list(V5_NUMERIC_FEATURES)
-    raise ValueError(f"Unknown feature set: {name}")
+        return list(STRUCTURED_CATEGORICAL_FEATURES), list(STRUCTURED_NUMERIC_FEATURES)
+    raise ValueError(
+        f"Unknown feature set: {name}; use tabular, drain, or structured"
+    )
 
 
 def seed_everything(seed: int) -> None:
@@ -103,8 +103,8 @@ def read_frame(
     categorical_features: list[str] | None = None,
     numeric_features: list[str] | None = None,
 ) -> pd.DataFrame:
-    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
-    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
+    categorical_features = categorical_features or list(TABULAR_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(TABULAR_NUMERIC_FEATURES)
     columns = ["event_id", "label_binary", *categorical_features, *numeric_features]
     frame = pd.read_parquet(path, columns=columns)
     return stratified_sample(frame, max_rows, seed)
@@ -115,8 +115,8 @@ def fit_preprocessor(
     categorical_features: list[str] | None = None,
     numeric_features: list[str] | None = None,
 ) -> dict[str, Any]:
-    categorical_features = categorical_features or list(V1_CATEGORICAL_FEATURES)
-    numeric_features = numeric_features or list(V1_NUMERIC_FEATURES)
+    categorical_features = categorical_features or list(TABULAR_CATEGORICAL_FEATURES)
+    numeric_features = numeric_features or list(TABULAR_NUMERIC_FEATURES)
     category_maps: dict[str, dict[str, int]] = {}
     cardinalities: list[int] = []
     for column in categorical_features:
@@ -274,23 +274,25 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--train",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v1_train.parquet",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0" / "tabular_train.parquet",
     )
     parser.add_argument(
         "--valid",
         type=Path,
-        default=PROJECT_ROOT / "data" / "processed" / "v1_valid.parquet",
+        default=PROJECT_ROOT / "data" / "processed" / "v1_0" / "tabular_valid.parquet",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v1_npu_tabular",
+        default=PROJECT_ROOT / "artifacts" / "v1_0_tabular",
     )
     parser.add_argument(
         "--feature-set",
-        choices=("v1", "v4", "v5"),
-        default="v1",
-        help="v1 baseline, v4 hybrid Drain, or v5.1 schema-aware structured features",
+        default="tabular",
+        help=(
+            "tabular (v1.0), drain (v1.1), or structured (v1.2); "
+            "legacy aliases v1/v4/v5 remain readable"
+        ),
     )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
     parser.add_argument("--epochs", type=int, default=20)
@@ -457,14 +459,27 @@ def main() -> None:
         labels=LABELS,
         probabilities=probabilities,
     )
+    canonical_feature_set = {
+        "v1": "tabular",
+        "v4": "drain",
+        "v5": "structured",
+    }.get(args.feature_set, args.feature_set)
     metrics.update(
         {
             "model": {
-                "v1": "v1_pytorch_npu_structured",
-                "v4": "v4_pytorch_npu_hybrid_drain",
-                "v5": "v5_1_pytorch_npu_schema_aware_drain",
-            }[args.feature_set],
-            "feature_set": args.feature_set,
+                "tabular": "v1.0_tabular_embedding_mlp",
+                "drain": "v1.1_tabular_mlp_with_grouped_drain",
+                "structured": "v1.2_tabular_mlp_with_structured_parser",
+            }[canonical_feature_set],
+            "model_version": {
+                "tabular": "v1.0",
+                "drain": "v1.1",
+                "structured": "v1.2",
+            }[canonical_feature_set],
+            "feature_set": canonical_feature_set,
+            "legacy_feature_set": (
+                args.feature_set if args.feature_set != canonical_feature_set else None
+            ),
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": selection_metric,

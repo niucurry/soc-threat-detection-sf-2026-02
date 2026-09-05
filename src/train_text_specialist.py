@@ -118,12 +118,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--base-predictions",
         type=Path,
-        help="Full V1 validation predictions for official-score threshold tuning",
+        help="Full v1.0 validation predictions for official-score threshold tuning",
     )
     parser.add_argument(
         "--output-dir",
         type=Path,
-        default=PROJECT_ROOT / "artifacts" / "v2_text_specialist",
+        default=PROJECT_ROOT / "artifacts" / "v2_2_text_specialist",
     )
     parser.add_argument("--max-features", type=int, default=200_000)
     parser.add_argument("--alpha", type=float, default=1e-6)
@@ -206,7 +206,9 @@ def main() -> None:
     )
     metrics.update(
         {
-            "model": "v3_tfidf_sgd_semantic_rule_specialist",
+            "model": "v2.2_tfidf_sgd_semantic_rule_specialist",
+            "model_version": "v2.2",
+            "legacy_alias": "V3-G text specialist",
             "route": "pipeline == syslog and product_name is empty",
             "threshold": threshold,
             "threshold_selection_metric": threshold_selection_metric,
