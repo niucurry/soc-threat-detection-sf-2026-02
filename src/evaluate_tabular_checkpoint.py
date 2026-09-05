@@ -49,7 +49,13 @@ def main() -> None:
     started = time.perf_counter()
     checkpoint = torch.load(args.model, map_location="cpu", weights_only=False)
     preprocessor = checkpoint["preprocessor"]
-    frame = read_frame(args.data, args.max_rows, seed=20260828)
+    frame = read_frame(
+        args.data,
+        args.max_rows,
+        seed=20260828,
+        categorical_features=list(preprocessor["categorical_features"]),
+        numeric_features=list(preprocessor["numeric_features"]),
+    )
     categorical, numeric, labels = transform(frame, preprocessor)
     loader = make_loader(
         categorical,
@@ -107,4 +113,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

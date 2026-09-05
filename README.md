@@ -1,103 +1,109 @@
-# SOC日志三分类项目
+# v1.0：结构Embedding与MLP
 
-目标：将每条日志分类为 `benign`（正常）、`malicious`（恶意）或
-`suspicious`（可疑）。所有实验都遵守两个原则：不使用 `event_id` 猜标签，
-并始终在官方提供的私有验证标签上报告三类分别的效果。
+本分支：`release/v1.0-tabular`。统一入口`scripts/run.sh`调用`scripts/run_cloud_v1_0_tabular.sh`。
+完整验证范围为2,014,052行；路由和烟雾结果在表中单独标明。
 
-## 推荐赛方镜像
+## 模型定义与改动理由
 
-使用：`pytorch_v1.1:2.4.0-npu-py310-ubuntu22.04-aarch64`。
+类别字段各自Embedding（维数min(24,max(3,round(2*cardinality^0.25))))，数值按训练均值/标准差标准化并截断[-12,12]。拼接→Linear256→BatchNorm→SiLU→Dropout0.15→Linear128→BatchNorm→SiLU→Dropout0.10→Linear64→SiLU→Linear3，交叉熵训练。未知类别索引0。
 
-它适合训练并提供 Jupyter/VS Code。第一版云端主模型使用原生 PyTorch，
-自动优先选择 `npu:0`；同一套代码在没有 NPU 时也能退回 CUDA 或 CPU 做小规模检查。
+目标是建立紧凑基线，正文只以长度和关键词指示进入，无法完整表达嵌套事件。
 
-## 当前版本
+## 完整输入特征
 
-V1 云端主线是“类别嵌入 + 数值网络”的 PyTorch 结构化模型：
+### 类别输入（8个）
 
-- 不使用 `event_id`、完整时间、原始 IP、原始主机名或原始用户名；
-- 使用产品、采集管道、端口范围、字段缺失情况、消息长度和少量关键词；
-- 使用可调节的类别平衡权重，避免模型只预测占比最大的正常类别；
-- 主要评价指标为 Macro-F1，同时报告每一类召回率和混淆矩阵。
+| 字段 | 定义 |
+|---|---|
+| `pipeline` | 采集管道；空串/NULL归为缺失类别。 |
+| `product_name` | 产品名称；不直接决定威胁标签。 |
+| `product_group` | 产品粗组：missing、asa、aws_vpc、other_suspicious_products（Precinct/Falcon）、other。 |
+| `src_ip_kind` | 源地址外形类别：missing、ipv4_shape、host_token、other；仅按当前正则判外形。 |
+| `port_bucket` | 源端口桶：missing、0–1023、1024–49151、49152以上；基于可解析整数。 |
+| `message_length_bucket` | 正文长度桶：missing、1–120、121–180、181–300、301–1000、1001以上。 |
+| `structure_combo` | pipeline、product_group、message_length_bucket和是否含deny拼接的类别。 |
+| `network_missing_pattern` | 源IP/目的IP/源端口三个缺失位按顺序拼接，如111。 |
 
-当前上传包只包含PyTorch-NPU主线代码，避免在ARM镜像中安装不必要的CPU模型依赖。
+### 数值输入（23个）
 
-## 上传目录
+| 字段 | 定义 |
+|---|---|
+| `src_port_number` | 原始src_port尝试转整数，缺失填-1。 |
+| `src_ip_missing` | src_ip对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `dst_ip_missing` | dst_ip对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `src_port_missing` | src_port对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `src_host_missing` | src_host对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `dst_host_missing` | dst_host对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `username_missing` | username对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `product_missing` | product对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `message_missing` | message对应字段缺失为1，否则0；源端口按整数转换是否成功判断。 |
+| `network_present_count` | src_ip、dst_ip、src_port三个字段存在数量，0–3。 |
+| `message_length` | 原始正文字符长度，空正文为0。 |
+| `src_ip_length` | src_ip对应字符串字符长度，空值按空串。 |
+| `dst_ip_length` | dst_ip对应字符串字符长度，空值按空串。 |
+| `src_host_length` | src_host对应字符串字符长度，空值按空串。 |
+| `dst_host_length` | dst_host对应字符串字符长度，空值按空串。 |
+| `username_length` | username对应字符串字符长度，空值按空串。 |
+| `message_has_deny` | 小写正文是否含deny子串；不是完整语义判断。 |
+| `message_has_allow` | 小写正文是否含allow子串。 |
+| `message_has_accepted` | 小写正文是否含accepted子串。 |
+| `message_has_failed` | 小写正文是否含failed子串。 |
+| `message_has_blocked` | 小写正文是否含blocked子串。 |
+| `message_starts_angle` | 去左空白后的正文首字符是否为<。 |
+| `message_contains_json` | 正文是否包含{；并不表示JSON解析成功。 |
 
-把三份原始文件放到：
+## 训练、实验结果、缺陷与后续解决方法
 
-```text
-data/raw/train.parquet
-data/raw/valid_input.parquet
-data/raw/valid_answer_private.parquet
-```
+训练默认AdamW，lr=0.002，weight_decay=1e-5，batch=8192，num_workers=4，梯度范数裁剪5，seed=20260828，类别权重power=0。v1.x最多20轮/patience4；v2.x基础最多12轮/patience3。
 
-随后在项目根目录运行：
+在神经网络前曾准备 CatBoost 候选：MultiClass，350 iterations，depth=8，
+learning_rate=0.12，l2_leaf_reg=5，Balanced class weights，random_strength=0.5，
+seed=20260828。未留存完整验证结果，因此只作为方法探索记录，不列为有成绩的模型版本。
 
-```bash
-bash scripts/run_cloud_v1.sh
-```
+神经网络采用 AdamW，lr=0.002，weight_decay=1e-5，batch=8192，梯度范数裁剪5，
+seed=20260828。类别权重为 [N/(K*n_class)]^power，正式使用power=0，即全部为1。
+类别 Embedding 维数 min(24,max(3,round(2*cardinality^0.25)))。三类输出顺序固定为
+benign、malicious、suspicious。两个 checkpoint 必须分别记录：
 
-如果三份原始文件已经直接放在云平台的 `/root/work`，不需要复制文件，运行：
+| 实验 | 选择指标 | epoch | Score | 错误 | FP | FN | 子类型互错 |
+|---|---|---:|---:|---:|---:|---:|---:|
+| exp01 | Macro-F1 | 1 | 0.9572098298 | 9,857 | 9,793 | 40 | 24 |
+| exp02 | Competition Score | 3 | 0.9574032044 | 9,833 | 9,793 | 40 | 0 |
 
-```bash
-bash scripts/run_cloud_v1.sh /root/work
-```
+exp01混淆矩阵：[[1949780,9793,0],[30,13998,24],[10,0,40417]]；
+exp02：[[1949780,9793,0],[30,14022,0],[10,0,40417]]。
+exp01 Macro-F1约0.912286，exp02为0.9126510510016193。
+exp02云端训练耗时227.10秒；初始记录每epoch约35–37秒，checkpoint为236,108字节。
+这些耗时是单次环境测量，不能当作所有机器的保证。
 
-正式训练前可在相同的20万训练/验证样本上比较四种类别补偿强度：
+权重对照计划在相同20万行上比较0、0.25、0.50、0.75。仅power=0全量结果可核实，
+其他权重未留存完整成绩。训练损失下降但验证分类不动，说明继续增加训练轮次未解决问题。
+9,793个正常误报集中在产品缺失syslog路由：该路由训练231,092 benign/111,728 malicious，
+验证287,281 benign/14,052 malicious。攻击比例由32.59%变4.66%，原结构表示又把不同正文
+压成同样输入，支持“信息不足并伴随先验漂移”的诊断。后续分别尝试解析特征和正文专模。
 
-```bash
-bash scripts/run_weight_sweep_v1.sh
-```
-
-汇总结果保存在 `artifacts/v1_weight_sweep/comparison.csv` 和
-`comparison.json`，用于选择能兼顾攻击召回与误报数量的正式参数。
-
-训练日志会实时显示，并保存到
-`artifacts/v1_npu_tabular/train_console.log`。最终模型、完整指标和验证集预测
-也会保存在同一目录。
-
-详细上传和故障处理步骤见 `UPLOAD_INSTRUCTIONS.md`。
-
-## 大型CSV/CVS文件打不开时
-
-不要使用Excel直接打开数百万行日志。先运行轻量检查命令，它只读取文件开头，
-不会把整个文件载入内存：
-
-```bash
-python src/inspect_data_file.py /实际路径/数据文件.cvs
-```
-
-将命令输出发回后，再根据真实格式决定是否重命名、解压、拆分或修改预处理代码。
-
-如果文件头是 `system,prompt,response`，它属于指令微调数据。训练文件按标签相关顺序排列，
-因此需要流式扫描完整文件才能得到可靠的标签分布：
-
-```bash
-python src/analyze_sft_csv.py /实际路径/train_system_prompt_response.csv \
-  --max-rows 0 \
-  --output artifacts/sft_csv_sample_analysis.json
-```
-
-该脚本会正确处理prompt中的引号和换行，并统计响应标签、异常行和prompt长度。
-
-## 只有system/prompt/response训练CSV时
-
-直接运行SFT版V1脚本，参数是5GB CSV的绝对路径：
-
-```bash
-bash scripts/run_sft_cloud_v1.sh \
-  "/root/work/基于SOC日志网络安全威胁检测算法设计与实现/train_system_prompt_response.csv"
-```
-
-脚本会流式解析prompt、恢复结构字段，并使用prompt哈希划分90%训练和10%内部验证。
-相同prompt始终进入同一部分，避免重复日志同时出现在训练集和验证集中。
-
-如已将私有官方验证仓库克隆到云平台，可在启动前设置：
+## 云平台运行
 
 ```bash
-export OFFICIAL_VALID_PATH=/私有验证仓库路径/data/v1_valid.parquet
+git fetch origin
+git switch release/v1.0-tabular
+git pull --ff-only
 ```
 
-训练结束后脚本会自动执行一次外部验证，并把结果写入
-`artifacts/v1_sft_npu_tabular/official_validation/official_metrics.json`。
+/root/work应含train.parquet、valid_input.parquet、valid_answer_private.parquet。
+
+```bash
+mkdir -p artifacts/v1_0_tabular
+nohup bash scripts/run.sh /root/work > artifacts/v1_0_tabular/nohup.log 2>&1 &
+echo $! > artifacts/v1_0_tabular/train.pid
+tail -f artifacts/v1_0_tabular/nohup.log
+```
+
+
+模型、预处理配置、metrics.json、valid_predictions.parquet、manifest、环境和提交号一起保存。
+
+## 复现范围
+
+上述指标来自已经返回的完整实验输出。本轮仓库整理未重新执行云端全量训练，本地检查不能证明新提交逐位复现原指标。改变特征列名后应重新生成对应特征并重训；不能只改文件名作为复现。
+
+[训练环境](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/ENVIRONMENT.md) · [评分公式](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/SCORING.md) · [完整开发日志](https://github.com/niucurry/soc-threat-detection-sf-2026-02/blob/main/docs/DEVELOPMENT_LOG_STANDARD.md)

@@ -4,9 +4,9 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "${PROJECT_DIR}"
 
-TRAIN_PATH="${1:-data/processed/v1_train.parquet}"
-VALID_PATH="${2:-data/processed/v1_valid.parquet}"
-OUTPUT_ROOT="${WEIGHT_SWEEP_OUTPUT:-artifacts/v1_weight_sweep}"
+TRAIN_PATH="${1:-data/processed/v1_0/tabular_train.parquet}"
+VALID_PATH="${2:-data/processed/v1_0/tabular_valid.parquet}"
+OUTPUT_ROOT="${V1_0_SWEEP_OUTPUT_ROOT:-artifacts/v1_0_weight_sweep}"
 
 for required_file in "${TRAIN_PATH}" "${VALID_PATH}"; do
   if [[ ! -f "${required_file}" ]]; then
@@ -23,6 +23,7 @@ for power in 0.00 0.25 0.50 0.75; do
   mkdir -p "${output_dir}"
   echo "Starting class-weight power ${power}"
   python -u src/train_npu_tabular.py \
+    --feature-set tabular \
     --train "${TRAIN_PATH}" \
     --valid "${VALID_PATH}" \
     --device auto \
@@ -38,6 +39,6 @@ for power in 0.00 0.25 0.50 0.75; do
     2>&1 | tee "${output_dir}/train_console.log"
 done
 
-python src/summarize_experiments.py \
-  --root "${OUTPUT_ROOT}" \
-  --output "${OUTPUT_ROOT}/comparison.csv"
+python src/compare_experiments.py \
+  --scan-root "${OUTPUT_ROOT}" \
+  --output "${OUTPUT_ROOT}/comparison.json"

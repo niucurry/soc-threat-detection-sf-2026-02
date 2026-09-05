@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "current_version": "v1.0",
+  "current_default_experiment": "v1.0-exp02",
+  "current_branch": "release/v1.0-tabular",
+  "naming": {
+    "model_version": "vMAJOR.MINOR",
+    "experiment": "vMAJOR.MINOR-expNN-short-name",
+    "epoch_checkpoint": "vMAJOR.MINOR-expNN-epNN",
+    "seed_run": "vMAJOR.MINOR-expNN-seedNN",
+    "rule": "Change MAJOR only when the model family changes; change MINOR for a material method change within a family; use exp/ep/seed suffixes for comparisons, checkpoints and random repeats."
+  },
+  "versions": [
+    {
+      "version": "v1.0",
+      "family": "tabular-embedding-mlp",
+      "name": "结构Embedding与MLP",
+      "status": "superseded",
+      "runner": "scripts/run_cloud_v1_0_tabular.sh",
+      "official_result": {
+        "scope": "full official validation",
+        "competition_score": 0.9574032043567936,
+        "macro_f1": 0.9126510510016193,
+        "accuracy": 0.9951178023208934,
+        "errors": 9833,
+        "best_epoch": 3
+      },
+      "branch": "release/v1.0-tabular",
+      "validation_rows": 2014052,
+      "readme": "README.md"
+    }
+  ]
+}
