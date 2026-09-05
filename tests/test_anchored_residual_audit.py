@@ -28,7 +28,7 @@ def test_content_audit_supports_metadata_predictions_without_content_candidate(
             "content_threat_probability": [0.95, 0.91],
             "threat_probability": [0.7, 0.2],
             "conflict_candidate": [1, 1],
-            # Legacy v5.0 files have metadata candidates but no content candidate.
+            # Metadata-only predictions have no content candidate column.
             "metadata_reliability_candidate": [0, 0],
             "trust_score": [0.0, 0.0],
             "delta_margin": [0.0, 0.0],

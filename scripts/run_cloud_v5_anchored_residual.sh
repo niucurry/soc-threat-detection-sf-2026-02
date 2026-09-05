@@ -139,8 +139,8 @@ train_and_audit() {
     2>&1 | tee "${run_dir}/residual_console.log"
 }
 
-# exp01 is the official v5.2 result: the residual decides whether the frozen
-# content branch is trustworthy in anchor-benign/content-threat conflicts.
+# exp01 learns whether the selected frozen evidence source is trustworthy
+# when it conflicts with an anchor-benign prediction. See this branch's README.
 train_and_audit \
   "${ANCHOR_RUN_NAME}" anchor \
   "${CONTENT_FEATURE_DIR}/content_train.parquet" \
@@ -180,8 +180,8 @@ python -u src/prepare_residual_features.py "${RESIDUAL_JOIN_ARGS[@]}" \
   2>&1 | tee "${OUTPUT_ROOT}/prepare_residual_console.log"
 
 # exp02 tests whether four trainable content views improve the trust decision.
-# In the observed v5.2 experiment it tied hard predictions but had no score gain,
-# so exp01 remains the official deployment candidate.
+# This optional ablation is separate from the default exp01 experiment;
+# its measured results and limitations are recorded in this branch's README.
 train_and_audit \
   "${MULTIVIEW_RUN_NAME}" multiview \
   "${RESIDUAL_FEATURE_DIR}/residual_train.parquet" \
