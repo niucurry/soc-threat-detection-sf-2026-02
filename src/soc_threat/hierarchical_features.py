@@ -99,13 +99,14 @@ def fit_hierarchical_preprocessor(
         raise ValueError("novelty_pseudocount must be positive")
     missing = [name for name in HIERARCHICAL_REQUIRED_COLUMNS if name not in train]
     if missing:
-        raise ValueError(f"Missing V7 feature columns: {missing}")
+        raise ValueError(f"Missing hierarchical feature columns: {missing}")
 
     counts = semantic_combo_keys(train).value_counts(dropna=False)
     combo_counts = {str(key): int(value) for key, value in counts.items()}
     semantic, _ = _semantic_frame(train, combo_counts)
     return {
-        "version": "v7.0",
+        "format_version": 1,
+        "model_version": "v4.0",
         "metadata": fit_preprocessor(
             train,
             METADATA_CATEGORICAL_FEATURES,

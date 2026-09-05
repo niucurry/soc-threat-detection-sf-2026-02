@@ -10,7 +10,7 @@ from prepare_features import FEATURE_QUERY, sql_path
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Prepare compact V1 features for an unlabeled test parquet"
+        description="Prepare compact v1.0 features for an unlabeled test parquet"
     )
     parser.add_argument("--input", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
