@@ -138,7 +138,6 @@ def main() -> None:
         print(json.dumps(summaries[-1], ensure_ascii=False), flush=True)
     manifest = {
         "model_version": "v5.x",
-        "legacy_alias": "V9/V10",
         "method": "event_id join of v3.0 raw and v4.1 multi-view inputs",
         "splits": summaries,
         "total_seconds": round(time.perf_counter() - started, 2),

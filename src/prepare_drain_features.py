@@ -324,7 +324,6 @@ def main() -> None:
         "leakage_guard": "Drain and direct-template frequencies fitted on train.parquet only",
     }
     summary["model_version"] = "v1.1"
-    summary["legacy_alias"] = "V4"
     (args.output_dir / "drain_manifest.json").write_text(
         json.dumps(summary, ensure_ascii=False, indent=2), encoding="utf-8"
     )

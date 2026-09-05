@@ -236,7 +236,6 @@ def main() -> None:
     manifest_path = args.output_dir / "tabular_manifest.json"
     manifest = {
         "model_version": "v1.0",
-        "legacy_alias": "V1",
         "splits": summaries,
     }
     manifest_path.write_text(

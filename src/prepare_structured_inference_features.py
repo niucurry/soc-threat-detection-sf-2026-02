@@ -59,7 +59,6 @@ def main() -> None:
         json.dumps(
             {
                 "model_version": "v1.2",
-                "legacy_alias": "V5.1",
                 "log_features": log_summary,
                 "joined_features": joined_summary,
                 "template_model": str(args.model_dir),

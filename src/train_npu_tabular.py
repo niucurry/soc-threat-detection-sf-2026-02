@@ -28,9 +28,7 @@ from soc_threat.metrics import evaluate_predictions  # noqa: E402
 
 
 def resolve_feature_set(name: str) -> tuple[list[str], list[str]]:
-    canonical = {"v1": "tabular", "v4": "drain", "v5": "structured"}.get(
-        name, name
-    )
+    canonical = name
     if canonical == "tabular":
         return list(TABULAR_CATEGORICAL_FEATURES), list(TABULAR_NUMERIC_FEATURES)
     if canonical == "drain":
@@ -289,12 +287,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--feature-set",
         default="tabular",
-        help=(
-            "tabular (v1.0), drain (v1.1), or structured (v1.2); "
-            "legacy aliases v1/v4/v5 remain readable"
-        ),
+        choices=("tabular", "drain", "structured"),
+        help="tabular (v1.0), drain (v1.1), or structured (v1.2)",
     )
     parser.add_argument("--device", default="auto", help="auto, npu:0, cuda:0, or cpu")
+    parser.add_argument("--selection-metric", choices=("competition_score", "macro_f1"), default="competition_score")
     parser.add_argument("--epochs", type=int, default=20)
     parser.add_argument("--batch-size", type=int, default=8192)
     parser.add_argument("--learning-rate", type=float, default=2e-3)
@@ -365,7 +362,7 @@ def main() -> None:
         weight_decay=args.weight_decay,
     )
 
-    selection_metric = "competition_score"
+    selection_metric = args.selection_metric
     best_selection_score = -1.0
     best_epoch = -1
     best_state: dict[str, torch.Tensor] | None = None
@@ -459,11 +456,7 @@ def main() -> None:
         labels=LABELS,
         probabilities=probabilities,
     )
-    canonical_feature_set = {
-        "v1": "tabular",
-        "v4": "drain",
-        "v5": "structured",
-    }.get(args.feature_set, args.feature_set)
+    canonical_feature_set = args.feature_set
     metrics.update(
         {
             "model": {
@@ -477,9 +470,6 @@ def main() -> None:
                 "structured": "v1.2",
             }[canonical_feature_set],
             "feature_set": canonical_feature_set,
-            "legacy_feature_set": (
-                args.feature_set if args.feature_set != canonical_feature_set else None
-            ),
             "device": str(device),
             "best_epoch": best_epoch,
             "selection_metric": selection_metric,

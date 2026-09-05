@@ -345,7 +345,6 @@ def main() -> None:
     ]
     summary = {
         "model_version": "v4.1",
-        "legacy_alias": "V8",
         "method": "four-view fixed-hash content encoding without template IDs",
         "views": list(MULTIVIEW_CONTENT_VIEWS),
         "hash_buckets": args.hash_buckets,

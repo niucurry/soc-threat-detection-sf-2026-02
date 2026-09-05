@@ -431,7 +431,6 @@ def main() -> None:
     metrics.update(
         {
             "model": "v3.0_content_aware_neural",
-            "legacy_alias": "V6",
             "mode": mode,
             "device": str(device),
             "best_epoch": best_epoch,

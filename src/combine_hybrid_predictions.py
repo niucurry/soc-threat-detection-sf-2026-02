@@ -180,7 +180,6 @@ def main() -> None:
         {
             "model": "v2.2_hybrid_structured_text_semantic_rules",
             "model_version": "v2.2",
-            "legacy_alias": "V3-G",
             "base_predictions": str(args.base_predictions.resolve()),
             "specialist_predictions": str(
                 args.specialist_predictions.resolve()

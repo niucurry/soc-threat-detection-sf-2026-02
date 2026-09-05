@@ -57,7 +57,7 @@ for index in "${!MODES[@]}"; do
   run_name="${RUN_NAMES[$index]}"
   run_dir="${OUTPUT_ROOT}/${run_name}"
   mkdir -p "${run_dir}"
-  if [[ -f "${run_dir}/metrics.json" && "${V3_0_FORCE_TRAIN:-0}" != "1" ]]; then
+  if [[ -s "${run_dir}/metrics.json" && -s "${run_dir}/model.pt" && -s "${run_dir}/valid_predictions.parquet" && "${V3_0_FORCE_TRAIN:-0}" != "1" ]]; then
     echo "${run_name} metrics already exist; skipping completed experiment."
   else
     python -u src/train_content_neural.py \

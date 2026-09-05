@@ -21,6 +21,7 @@ sys.path.insert(0, str(PROJECT_ROOT / "src"))
 from soc_threat import LABELS  # noqa: E402
 from soc_threat.metrics import evaluate_predictions  # noqa: E402
 from soc_threat.text_specialist import (  # noqa: E402
+    DEFAULT_RULE_PROFILE,
     SPECIALIST_LABELS,
     best_binary_macro_f1_threshold,
     best_competition_threshold,
@@ -126,6 +127,7 @@ def parse_args() -> argparse.Namespace:
         default=PROJECT_ROOT / "artifacts" / "v2_2_text_specialist",
     )
     parser.add_argument("--max-features", type=int, default=200_000)
+    parser.add_argument("--rules-profile", choices=("basic", "expanded"), default=DEFAULT_RULE_PROFILE)
     parser.add_argument("--alpha", type=float, default=1e-6)
     parser.add_argument("--max-iter", type=int, default=30)
     parser.add_argument("--seed", type=int, default=20260828)
@@ -176,7 +178,7 @@ def main() -> None:
     malicious_index = list(classifier.classes_).index("malicious")
     raw_probabilities = classifier.predict_proba(valid_matrix)[:, malicious_index]
     malicious_probabilities, strong_rules = force_rule_probabilities(
-        raw_probabilities, valid_text
+        raw_probabilities, valid_text, profile=args.rules_profile
     )
     actual_labels = valid["label_binary"].to_numpy(dtype=object)
     if args.base_predictions is None:
@@ -208,7 +210,7 @@ def main() -> None:
         {
             "model": "v2.2_tfidf_sgd_semantic_rule_specialist",
             "model_version": "v2.2",
-            "legacy_alias": "V3-G text specialist",
+            "rules_profile": args.rules_profile,
             "route": "pipeline == syslog and product_name is empty",
             "threshold": threshold,
             "threshold_selection_metric": threshold_selection_metric,
@@ -241,6 +243,7 @@ def main() -> None:
     joblib.dump(
         {
             "vectorizer": vectorizer,
+            "rules_profile": args.rules_profile,
             "classifier": classifier,
             "threshold": threshold,
             "threshold_selection_metric": threshold_selection_metric,

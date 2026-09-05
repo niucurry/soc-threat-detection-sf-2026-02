@@ -107,7 +107,6 @@ def fit_hierarchical_preprocessor(
     return {
         "format_version": 1,
         "model_version": "v4.0",
-        "legacy_alias": "V7",
         "metadata": fit_preprocessor(
             train,
             METADATA_CATEGORICAL_FEATURES,

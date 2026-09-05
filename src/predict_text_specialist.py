@@ -59,7 +59,7 @@ def main() -> None:
     malicious_index = list(classifier.classes_).index("malicious")
     raw_probabilities = classifier.predict_proba(matrix)[:, malicious_index]
     malicious_probabilities, strong_rules = force_rule_probabilities(
-        raw_probabilities, text
+        raw_probabilities, text, profile=package["rules_profile"]
     )
     predicted = np.where(
         malicious_probabilities >= float(package["threshold"]),

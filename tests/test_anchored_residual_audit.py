@@ -11,7 +11,7 @@ import pandas as pd
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_content_audit_supports_legacy_predictions_without_content_candidate(
+def test_content_audit_supports_metadata_predictions_without_content_candidate(
     tmp_path: Path,
 ) -> None:
     predictions = tmp_path / "predictions.parquet"

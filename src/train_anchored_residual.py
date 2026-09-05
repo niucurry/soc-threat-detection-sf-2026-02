@@ -479,7 +479,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--evidence-source",
         choices=("metadata", "content"),
-        default="metadata",
+        default="content",
         help="Frozen branch whose positive vote can rescue an anchor-benign row",
     )
     parser.add_argument(

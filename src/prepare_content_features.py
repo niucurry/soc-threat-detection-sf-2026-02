@@ -341,7 +341,6 @@ def main() -> None:
     ]
     summary = {
         "model_version": "v3.0",
-        "legacy_alias": "V6",
         "method": "fixed-hash word/bigram/character content encoding without template IDs",
         "hash_buckets": args.hash_buckets,
         "max_tokens": args.max_tokens,

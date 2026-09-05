@@ -237,8 +237,6 @@ def main() -> None:
     ]
     summary = {
         "model_version": "v1.2",
-        "legacy_alias": "V5.1",
-        "feature_schema_compatibility": "legacy v5 column names retained",
         "template_model": template_manifest,
         "log_features": log_summaries,
         "joined_features": joined,

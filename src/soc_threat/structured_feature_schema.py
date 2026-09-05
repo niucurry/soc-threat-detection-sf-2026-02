@@ -6,24 +6,22 @@ from soc_threat.drain_feature_schema import (
 from soc_threat.drain_feature_schema import NUMERIC_FEATURES as DRAIN_NUMERIC_FEATURES
 
 
-# The ``*_v5`` storage columns are retained so historical Parquet files and
-# checkpoints remain readable.  V5.1 is a legacy alias; the model version is v1.2.
 CATEGORICAL_FEATURES = [
     *DRAIN_CATEGORICAL_FEATURES,
     "structured_parser",
     "payload_parse_status",
     "schema_id",
     "semantic_template_id",
-    "event_category_v5",
-    "event_type_v5",
-    "event_action_v5",
-    "event_outcome_v5",
-    "event_reason_v5",
+    "event_category",
+    "event_type",
+    "event_action",
+    "event_outcome",
+    "event_reason",
     "authentication_factor",
-    "service_name_v5",
-    "application_name_v5",
-    "rule_name_v5",
-    "threat_category_v5",
+    "service_name",
+    "application_name",
+    "rule_name",
+    "threat_category",
 ]
 
 NUMERIC_FEATURES = [
