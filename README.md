@@ -134,6 +134,12 @@ tail -f artifacts/v5_2_content_rescue/nohup.log
 默认只跑exp01，V5_RUN_MULTIVIEW=1启用exp02。
 模型、预处理配置、metrics.json、valid_predictions.parquet、manifest、环境和提交号一起保存。
 
+## 最终测试集预测（不重新训练）
+
+加载已备份的 v5.2-exp01 权重，使用 `scripts/predict_test.sh` 生成官方要求的两列 `res.csv`。
+支持原始无标签测试 parquet、权重指纹校验、分块断点续跑和完整 ID 覆盖检查。
+操作步骤与2026-10-14兼容性检查结果见[最终测试集提交说明](docs/FINAL_TEST_SUBMISSION.md)。
+
 ## 复现范围
 
 上述指标来自已经返回的完整实验输出。本轮仓库整理未重新执行云端全量训练，本地检查不能证明新提交逐位复现原指标。改变特征列名后应重新生成对应特征并重训；不能只改文件名作为复现。
