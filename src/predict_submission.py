@@ -93,16 +93,31 @@ def load_model(path: Path, device: torch.device):
     return model, checkpoint
 
 
-@torch.inference_mode()
-def predict_table(raw: pa.Table, model, checkpoint: dict, device: torch.device,
-                  batch_size: int, connection) -> pa.Table:
+def load_refit_model(path: Path, device: torch.device):
+    """Load only the explicit full-label checkpoint format, not an arbitrary backup."""
+    expected = Path(str(path) + '.sha256').read_text('utf-8').split()[0]
+    if sha256(path) != expected:
+        raise ValueError('Refit checkpoint SHA256 mismatch')
+    checkpoint = torch.load(path, map_location='cpu', weights_only=True)
+    if checkpoint.get('checkpoint_kind') != 'full_label_hierarchical':
+        raise ValueError('Expected a full-label hierarchical checkpoint')
+    if (list(checkpoint['labels']) != list(LABELS)
+            or checkpoint['model_config'].get('content_input_mode') != 'raw'
+            or checkpoint.get('token_length') != TOKEN_LENGTH):
+        raise ValueError('Unsupported refit feature/label contract')
+    model = HierarchicalContentModel(**checkpoint['model_config'])
+    model.load_state_dict(checkpoint['model_state'], strict=True)
+    return model.to(device).eval(), checkpoint
+
+
+def encode_raw_batch(raw: pa.Table, connection, *, buckets: int):
+    """One stateless feature implementation shared by refit training and inference."""
     raw = raw.select(RAW_COLUMNS)
     connection.register('source_data', raw.append_column(
         'label_binary', pa.nulls(len(raw), type=pa.string())))
     frame = connection.execute(FEATURE_QUERY).fetchdf()
     if frame['event_id'].tolist() != raw['event_id'].to_pylist():
         raise ValueError('Feature extraction changed input row order')
-    buckets = int(checkpoint['model_config']['anchor_config']['hash_buckets'])
     encodings = [encode_log_content(row, buckets=buckets, max_tokens=TOKEN_LENGTH)
                  for row in raw.select(['event_id', 'pipeline', 'product_name',
                                         'vendor_name', 'message_sanitized']).to_pylist()]
@@ -110,8 +125,18 @@ def predict_table(raw: pa.Table, model, checkpoint: dict, device: torch.device,
     for name in content.column_names:
         if name not in {'event_id', 'raw_token_ids', 'field_token_ids'}:
             frame[name] = content[name].to_pandas().to_numpy()
-    arrays = transform_hierarchical_inputs(frame, checkpoint['preprocessor'])
     tokens = np.asarray([e.raw_token_ids for e in encodings], dtype=np.int64)
+    return frame, tokens
+
+
+@torch.inference_mode()
+def predict_table(raw: pa.Table, model, checkpoint: dict, device: torch.device,
+                  batch_size: int, connection) -> pa.Table:
+    config = checkpoint['model_config']
+    refit = checkpoint.get('checkpoint_kind') == 'full_label_hierarchical'
+    buckets = int(config['hash_buckets'] if refit else config['anchor_config']['hash_buckets'])
+    frame, tokens = encode_raw_batch(raw, connection, buckets=buckets)
+    arrays = transform_hierarchical_inputs(frame, checkpoint['preprocessor'])
     inputs = [(arrays.metadata_categorical, torch.long),
               (arrays.metadata_numeric, torch.float32),
               (arrays.semantic_categorical, torch.long),
@@ -121,9 +146,10 @@ def predict_table(raw: pa.Table, model, checkpoint: dict, device: torch.device,
         end = start + batch_size
         tensors = [torch.as_tensor(values[start:end], dtype=dtype, device=device)
                    for values, dtype in inputs]
-        result = model(*tensors, None,
-                       torch.as_tensor(arrays.novelty_gate[start:end], device=device),
-                       torch.as_tensor(arrays.combo_counts[start:end], device=device))
+        gate = torch.as_tensor(arrays.novelty_gate[start:end], device=device)
+        result = (model(*tensors, gate) if refit else model(
+            *tensors, None, gate,
+            torch.as_tensor(arrays.combo_counts[start:end], device=device)))
         threat = result.threat_logits.softmax(1).cpu().numpy()
         subtype = result.subtype_logits.softmax(1).cpu().numpy()
         if not np.isfinite(threat).all() or not np.isfinite(subtype).all():
@@ -179,6 +205,8 @@ def main() -> None:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument('--archive', type=Path)
     source.add_argument('--checkpoint', type=Path)
+    source.add_argument('--refit-checkpoint', type=Path,
+                        help='New full-label model with adjacent .sha256; never uses old overrides')
     parser.add_argument('--output-dir', type=Path, required=True)
     parser.add_argument('--device', default='auto')
     parser.add_argument('--chunk-size', type=int, default=10000)
@@ -193,13 +221,15 @@ def main() -> None:
     if (output / 'res.csv').exists() and not (output / 'manifest.json').exists():
         raise FileExistsError('Unowned res.csv exists; choose a new output directory')
     checkpoint_path = (restore_checkpoint(args.archive, output / 'frozen_model.pt')
-                       if args.archive else args.checkpoint)
-    if sha256(checkpoint_path) != FINAL_CHECKPOINT_SHA256:
+                       if args.archive else (args.refit_checkpoint or args.checkpoint))
+    if not args.refit_checkpoint and sha256(checkpoint_path) != FINAL_CHECKPOINT_SHA256:
         raise ValueError('This is not the verified final v5.2-exp01 checkpoint; refusing to predict')
     if str(args.device).startswith('npu'):
         import torch_npu  # noqa: F401
     device = choose_device(args.device)
-    model, checkpoint = load_model(checkpoint_path, device)
+    model, checkpoint = (load_refit_model(checkpoint_path, device) if args.refit_checkpoint
+                         else load_model(checkpoint_path, device))
+    model_name = checkpoint.get('model_name', 'v5.2-exp01')
     connection = duckdb.connect()
     connection.execute(f'SET threads TO {args.threads}')
     connection.execute("SET TimeZone='UTC'")
@@ -220,7 +250,7 @@ def main() -> None:
     shards.mkdir(exist_ok=True)
     expected_paths, completed = [], 0
     started = time.monotonic()
-    print(json.dumps({'stage': 'loaded', 'model': 'v5.2-exp01', 'rows': rows,
+    print(json.dumps({'stage': 'loaded', 'model': model_name, 'rows': rows,
                       'device': str(device), 'checkpoint_sha256': identity['checkpoint_sha256']}), flush=True)
     for index, batch in enumerate(pq.ParquetFile(args.input).iter_batches(
             batch_size=args.chunk_size, columns=RAW_COLUMNS)):
@@ -253,7 +283,7 @@ def main() -> None:
     connection.close()
     csv_path = output / 'res.csv'
     os.replace(temporary_csv, csv_path)
-    audit.update({'model': 'v5.2-exp01', 'checkpoint_sha256': identity['checkpoint_sha256'],
+    audit.update({'model': model_name, 'checkpoint_sha256': identity['checkpoint_sha256'],
                   'res_sha256': sha256(csv_path), 'output': str(csv_path.resolve()),
                   'has_ground_truth': False})
     write_json(output / 'submission_audit.json', audit)

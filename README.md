@@ -1,6 +1,30 @@
 # v5.2：内容救援与局部幅度限制
 
-本分支：`release/v5.2-content-rescue`。统一入口`scripts/run.sh`调用`scripts/run_cloud_v5_anchored_residual.sh`。
+当前实验分支：`feat/v5.2-full-label-refit`，基于 `release/v5.2-content-rescue`。
+旧默认入口 `scripts/run.sh` 仍调用 `scripts/run_cloud_v5_anchored_residual.sh`，不自动改变已有训练方式。
+
+## 新增实验：全部标签重训
+
+本分支新增 **v5.2-exp03 基础网络重训对照**，不改变下文原默认模型的定义和历史结果。
+先在同一个按内容分组的开发留出集上比较“原训练数据”和“加入部分验证标签”的基础网络，再按固定轮数训练全部标签。
+它重新训练基础网络和预处理参数，**不加载旧冻结锚点、不沿用旧纠错层、不自动执行人工标签覆盖**。
+完整输入字段仍是下文列出的基础网络输入；训练参数、划分规则、全部命令、中断恢复及备份说明见 [全部标签重训实验](docs/FULL_LABEL_REFIT.md)。
+
+```bash
+bash scripts/run_full_label_refit.sh study /root/work artifacts/v5_2_exp03_full_label
+# 先检查 study_comparison.json，再运行：
+bash scripts/run_full_label_refit.sh refit /root/work artifacts/v5_2_exp03_full_label
+bash scripts/predict_full_label_refit.sh /root/work/test_input.parquet artifacts/v5_2_exp03_full_label/final_model/model.pt artifacts/submission_full_label
+```
+
+当前状态：新增实验只有本地功能检查，**尚无云端全量训练或官方测试结果**。
+本地全套测试 54 项通过（其中新增 11 项），包含开发对照、固定轮次重训、恢复训练及生成预测文件的合成小样本流程。
+用户反馈的 0.999432 来自旧模型人工修正 73 条后的文件，不是新实验成绩。
+局限：分组方法不能识别所有近重复；原验证集已参与历史开发；全量训练后不能再报告原验证集为独立验证。
+若扩充组平均分未改善，脚本默认停止在开发阶段。后续纠错层是否重训，由新的实验结果决定。
+
+## 原默认模型与历史结果
+
 完整验证范围为2,014,052行；路由和烟雾结果在表中单独标明。
 
 ## 模型定义与改动理由
