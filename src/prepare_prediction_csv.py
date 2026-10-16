@@ -17,6 +17,21 @@ RAW_COLUMNS = ['event_id', 'timestamp', 'pipeline', 'src_ip', 'dst_ip', 'src_por
                'src_host', 'dst_host', 'username', 'message_sanitized',
                'product_name', 'vendor_name']
 SCHEMA = pa.schema([(c, pa.float64() if c == 'timestamp' else pa.string()) for c in RAW_COLUMNS])
+# Python 3.11+ lets the C CSV parser carry NUL bytes through, but 3.10 and earlier
+# abort any such line with _csv.Error('line contains NUL'). Carry NUL as a
+# private-use placeholder instead, so one converter runs on both, and restore it
+# before any value is written. Never delete control characters or infer
+# identifiers/log text as null markers.
+NUL_PLACEHOLDER = ''
+
+
+def _nul_as_placeholder(stream):
+    for line in stream:
+        yield line.replace('\x00', NUL_PLACEHOLDER) if '\x00' in line else line
+
+
+def _placeholder_as_nul(fields):
+    return [field.replace(NUL_PLACEHOLDER, '\x00') for field in fields]
 
 
 def prepare(input_path: Path, output_dir: Path) -> dict:
@@ -41,20 +56,22 @@ def prepare(input_path: Path, output_dir: Path) -> dict:
     if target.exists():
         raise FileExistsError('Unowned prepared input exists; use a NEW output directory')
     # Arrow's CSV parser misreads some unquoted log fields containing NUL bytes.
-    # Python's CSV parser preserves them, along with embedded newlines and quotes.
-    # Never delete control characters or infer identifiers/log text as null markers.
+    # Python's CSV parser preserves embedded newlines, quotes and placeholder-borne NUL.
+    if NUL_PLACEHOLDER.encode('utf-8') in input_path.read_bytes():
+        raise ValueError('Input already holds U+E000, the reserved NUL placeholder; refusing to guess')
     old_field_limit=csv.field_size_limit()
     csv.field_size_limit(64*1024*1024)
     try:
         with input_path.open('r',encoding='utf-8-sig',newline='') as stream:
-            reader=csv.reader(stream,strict=True)
-            header=next(reader,[])
+            reader=csv.reader(_nul_as_placeholder(stream),strict=True)
+            header=_placeholder_as_nul(next(reader,[]))
             if len(header)!=len(RAW_COLUMNS) or set(header)!=set(RAW_COLUMNS):
                 raise ValueError(f'Expected exactly the 12 raw columns, no labels; received {header}')
             indices=[header.index(c) for c in RAW_COLUMNS]
             with pq.ParquetWriter(temporary,SCHEMA,compression='zstd') as writer:
                 columns=[[] for _ in RAW_COLUMNS]
                 for record_number,values in enumerate(reader,1):
+                    values=_placeholder_as_nul(values)
                     if len(values)!=len(RAW_COLUMNS):
                         raise ValueError(f'Invalid CSV record {record_number}: expected 12 columns, got {len(values)}')
                     ordered=[values[i] for i in indices]
